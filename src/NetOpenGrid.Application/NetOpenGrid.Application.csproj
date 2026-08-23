@@ -1,0 +1,5 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="../NetOpenGrid.Domain/NetOpenGrid.Domain.csproj" />
+  </ItemGroup>
+</Project>

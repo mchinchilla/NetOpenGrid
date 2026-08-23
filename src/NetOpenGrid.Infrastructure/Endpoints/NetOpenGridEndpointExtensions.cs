@@ -1,0 +1,81 @@
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Routing;
+using Microsoft.Extensions.DependencyInjection;
+using NetOpenGrid.Application.Binding;
+using NetOpenGrid.Infrastructure.Assets;
+using NetOpenGrid.Infrastructure.Binding;
+using NetOpenGrid.Infrastructure.Runtime;
+
+namespace NetOpenGrid.Infrastructure.Endpoints;
+
+public sealed class NetOpenGridEndpointOptions
+{
+    public string Prefix { get; set; } = "/netgrid";
+}
+
+public static class NetOpenGridEndpointExtensions
+{
+    public static IEndpointRouteBuilder MapNetOpenGrid(
+        this IEndpointRouteBuilder endpoints,
+        Action<NetOpenGridEndpointOptions>? configure = null)
+    {
+        ArgumentNullException.ThrowIfNull(endpoints);
+
+        var options = new NetOpenGridEndpointOptions();
+        configure?.Invoke(options);
+
+        var assetOptions = endpoints.ServiceProvider.GetService<NetOpenGridAssetOptions>() ?? new NetOpenGridAssetOptions();
+        var prefix = options.Prefix.TrimEnd('/');
+        var assetPrefix = assetOptions.NormalizedAssetPrefix;
+
+        MapAsset(endpoints, $"{assetPrefix}/netopengrid.js", EmbeddedGridAssets.ClientRuntime);
+        MapAsset(endpoints, $"{assetPrefix}/vendor/htmx.min.js", EmbeddedGridAssets.Htmx);
+        MapAsset(endpoints, $"{assetPrefix}/vendor/alpine.min.js", EmbeddedGridAssets.Alpine);
+
+        endpoints.MapGet($"{prefix}/{{gridId}}/rows", async (string gridId, HttpContext http, CancellationToken cancellationToken) =>
+        {
+            if (http.RequestServices.GetKeyedService<IGridRuntime>(gridId) is not { } runtime)
+            {
+                return Results.NotFound($"Unknown grid '{gridId}'.");
+            }
+
+            var response = await runtime.RenderRowsAsync(http.Request.ToGridRequestValues(), cancellationToken);
+            ApplyMetaHeaders(http, response);
+
+            return Results.Text(response.Html, "text/html; charset=utf-8");
+        });
+
+        endpoints.MapGet($"{prefix}/{{gridId}}", async (string gridId, HttpContext http, CancellationToken cancellationToken) =>
+        {
+            if (http.RequestServices.GetKeyedService<IGridRuntime>(gridId) is not { } runtime)
+            {
+                return Results.NotFound($"Unknown grid '{gridId}'.");
+            }
+
+            var html = await runtime.RenderShellAsync(http.Request.ToGridRequestValues(), cancellationToken);
+            return Results.Text(html, "text/html; charset=utf-8");
+        });
+
+        return endpoints;
+    }
+
+    private static void MapAsset(IEndpointRouteBuilder endpoints, string pattern, EmbeddedAsset asset)
+    {
+        endpoints.MapGet(pattern, (HttpContext http) =>
+        {
+            http.Response.Headers.CacheControl = "public, max-age=31536000, immutable";
+            return Results.File(asset.Bytes, asset.ContentType);
+        });
+    }
+
+    private static void ApplyMetaHeaders(HttpContext http, GridRowsResponse response)
+    {
+        var headers = http.Response.Headers;
+        headers["X-Grid-Total"] = response.TotalCount.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        headers["X-Grid-Page"] = response.Page.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        headers["X-Grid-Page-Size"] = response.PageSize.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        headers["X-Grid-Page-Count"] = response.PageCount.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        headers["Cache-Control"] = "no-store";
+    }
+}

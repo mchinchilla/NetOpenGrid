@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="Assets\**" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../NetOpenGrid.Application/NetOpenGrid.Application.csproj" />
+    <ProjectReference Include="../NetOpenGrid.Domain/NetOpenGrid.Domain.csproj" />
+  </ItemGroup>
+</Project>
