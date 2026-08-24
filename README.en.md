@@ -14,7 +14,7 @@ No virtual DOM. No reflection on the hot path. No per-request expression compila
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind-v4-06B6D4?style=for-the-badge&logo=tailwindcss&logoColor=white)](https://tailwindcss.com)
 [![HTMX](https://img.shields.io/badge/HTMX-2-3D72D7?style=for-the-badge)](https://htmx.org)
 [![Alpine.js](https://img.shields.io/badge/Alpine.js-3-77C1CB?style=for-the-badge&logo=alpinedotjs&logoColor=white)](https://alpinejs.dev)
-[![Tests](https://img.shields.io/badge/tests-82%20passing-16A34A?style=for-the-badge&logo=xunit&logoColor=white)](#-testing)
+[![Tests](https://img.shields.io/badge/tests-86%20passing-16A34A?style=for-the-badge&logo=xunit&logoColor=white)](#-testing)
 [![License](https://img.shields.io/badge/License-MIT-F59E0B?style=for-the-badge)](LICENSE)
 
 </div>
@@ -288,6 +288,23 @@ Implemented across all three engines: in-memory (snapshot grouping), JSON (`Json
 
 ---
 
+## 📤 Server-side CSV export
+
+`GET /netgrid/:id/export?<context>` downloads the **full dataset** (all pages) with the current
+filter, search, sort and column order (`cols`) — RFC-4180 with comma/quote/newline escaping.
+
+```csharp
+// zero config: MapNetOpenGrid() already exposes the route
+// GET /netgrid/employees/export?filter=department:equals:Design&sort=id
+// → Content-Disposition: attachment; filename=employees.csv
+```
+
+- Cell values use the column formatters (`Format`); `RawCellHtml` is ignored for safety.
+- The toolbar ships a download button that exports the client's current context.
+- Transparent paging: iterates `MaxPageSize` pages until the total is covered.
+
+---
+
 ## 📚 Configuration reference
 
 ### `GridOptionsBuilder<T>`
@@ -463,7 +480,7 @@ dotnet test
 - [x] Excel-style filters with per-value counts
 - [x] Pinned and reorderable columns
 - [ ] Client label i18n
-- [ ] Generic server-side export (CSV/Excel) as part of the component
+- [x] Generic server-side export (CSV) as part of the component
 
 ---
 

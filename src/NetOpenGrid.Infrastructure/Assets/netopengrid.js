@@ -109,6 +109,7 @@
       listMeta: {},
       listSearch: '',
       columnOrder: null,
+      pinnedFields: [],
       dragField: null,
 
       get totalPages() {
@@ -167,9 +168,11 @@
           this.pageSize = initial.pageSize ?? 25;
         }
 
-        this.seedFromUrl();
         this.pageSizeLocked = false;
         this.loadColumnOrder();
+        this.seedFromUrl();
+        this.loadPinnedState();
+        this.applyPinStateAll();
 
         document.body.addEventListener('htmx:afterRequest', (event) => {
           const config = event.detail?.requestConfig;
@@ -189,6 +192,7 @@
             this.pageSize = this.meta.pageSize;
           }
 
+          this.applyPinStateAll();
           requestAnimationFrame(() => this.applyPinnedOffsets());
         });
 
@@ -207,6 +211,66 @@
         } catch {
           this.columnOrder = null;
         }
+      },
+
+      loadPinnedState() {
+        const serverPins = (window.__NETGRID__?.columns?.[id] || [])
+          .filter((c) => c.pin)
+          .map((c) => c.field);
+
+        let saved = [];
+        try {
+          const raw = localStorage.getItem(`netgrid:pins:${id}`);
+          if (raw) saved = JSON.parse(raw);
+        } catch {
+          saved = [];
+        }
+
+        this.pinnedFields = [...new Set([...serverPins, ...saved])];
+      },
+
+      isPinned(field) {
+        return this.pinnedFields.includes(field);
+      },
+
+      togglePin(field) {
+        const next = this.isPinned(field)
+          ? this.pinnedFields.filter((f) => f !== field)
+          : [...this.pinnedFields, field];
+
+        this.pinnedFields = next;
+
+        try {
+          localStorage.setItem(`netgrid:pins:${id}`, JSON.stringify(next));
+        } catch {
+          /* storage unavailable; pin stays session-only */
+        }
+
+        this.applyPinStateAll();
+        this.applyPinnedOffsets();
+      },
+
+      applyPinStateAll() {
+        for (const field of this.pinnedFields) {
+          this.applyPinState(field, true);
+        }
+      },
+
+      applyPinState(field, pinned) {
+        const targets = this.$el.querySelectorAll(`th[data-field="${field}"], td[data-field="${field}"]`);
+        targets.forEach((el) => {
+          const classes = el.tagName === 'TH'
+            ? ['sticky', 'z-30', 'border-r', 'border-neutral-200', 'bg-neutral-50', 'dark:border-neutral-800', 'dark:bg-neutral-800/60']
+            : ['sticky', 'z-10', 'border-r', 'border-neutral-100', 'bg-white', 'hover:bg-brand-50/40', 'dark:border-neutral-800/60', 'dark:bg-neutral-900', 'dark:hover:bg-white/[0.04]'];
+
+          if (pinned) {
+            el.classList.add(...classes);
+            el.setAttribute('data-pin', field);
+          } else {
+            el.classList.remove(...classes);
+            el.removeAttribute('data-pin');
+          }
+        });
       },
 
       applyPinnedOffsets() {
@@ -278,6 +342,18 @@
 
         const q = params.get('q');
         if (q) this.q = q;
+
+        const cols = params.get('cols');
+        if (cols) {
+          const fields = cols.split(',').map((s) => s.trim()).filter(Boolean);
+          if (fields.length > 0) this.columnOrder = fields;
+        }
+      },
+
+      exportCsv() {
+        const params = toParams(this, null);
+        const query = params.toString();
+        window.location.href = `/netgrid/${this.id}/export${query ? '?' + query : ''}`;
       },
 
       async refresh() {

@@ -3,8 +3,9 @@ using System.Text.Json;
 using NetOpenGrid.Application.Binding;
 using NetOpenGrid.Application.Engine;
 using NetOpenGrid.Application.Options;
-using NetOpenGrid.Domain.Columns;
 using NetOpenGrid.Domain.Abstractions;
+using NetOpenGrid.Domain.Columns;
+using NetOpenGrid.Domain.GridQuerying;
 
 namespace NetOpenGrid.Infrastructure.Runtime;
 
@@ -82,8 +83,7 @@ public sealed class GridRuntime<TItem> : IGridRuntime
 
     /// <summary>Excel-style distinct value counts for one column, under the current query context.</summary>
     public async ValueTask<string> RenderValuesAsync(string field, GridRequestValues values, CancellationToken cancellationToken = default)
-    {
-        var normalization = GridRequestParser.Parse(values, _options);
+    {        var normalization = GridRequestParser.Parse(values, _options);
 
         if (!_options.TryGetColumn(field, out var column) || !column.IsFilterable)
         {
@@ -109,10 +109,45 @@ public sealed class GridRuntime<TItem> : IGridRuntime
         return payload;
     }
 
+    /// <summary>
+    /// Server-side CSV export of the FULL filtered+sorted dataset (all pages),
+    /// rendered in the requested column order with the same cell formatters.
+    /// </summary>
+    public async ValueTask<(string FileName, string Csv)> RenderExportAsync(GridRequestValues values, CancellationToken cancellationToken = default)
+    {
+        var normalization = GridRequestParser.Parse(values, _options);
+        var columns = ResolveColumnOrder(values)
+            ?? _options.Columns.Where(static c => c.IsVisible).ToArray();
+
+        var rows = new List<TItem>();
+        var page = 1;
+
+        while (true)
+        {
+            var pagedQuery = normalization.Query with
+            {
+                Paging = new PageRequest(page, Math.Max(_options.MaxPageSize, 1))
+            };
+
+            var result = await new GridQueryEngine<TItem>(_dataSource).ExecuteAsync(pagedQuery, cancellationToken);
+            rows.AddRange(result.Page.Items);
+
+            if (rows.Count >= result.Page.TotalCount || result.Page.Items.Count == 0)
+            {
+                break;
+            }
+
+            page++;
+            cancellationToken.ThrowIfCancellationRequested();
+        }
+
+        return ($"{_options.Id}.csv", Export.GridCsvExporter.Build(columns, rows));
+    }
+
     public async ValueTask<string> RenderShellAsync(GridRequestValues values, CancellationToken cancellationToken = default)
     {
         var normalization = GridRequestParser.Parse(values, _options);
         var result = await new GridQueryEngine<TItem>(_dataSource).ExecuteAsync(normalization.Query, cancellationToken);
-        return await _renderer.RenderShellAsync(result, cancellationToken);
+        return await _renderer.RenderShellAsync(result, ResolveColumnOrder(values), cancellationToken);
     }
 }

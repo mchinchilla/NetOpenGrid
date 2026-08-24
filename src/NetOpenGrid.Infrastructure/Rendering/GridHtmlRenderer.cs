@@ -33,6 +33,12 @@ public sealed class GridHtmlRenderer<TItem>
     private const string FunnelIcon =
         "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 20 20\" fill=\"currentColor\" class=\"h-3.5 w-3.5\"><path d=\"M2.628 1.601C5.028 1.206 7.49 1 10 1s4.973.206 7.372.601a.75.75 0 0 1 .628.74v2.288a2.25 2.25 0 0 1-.659 1.59l-4.682 4.683a2.25 2.25 0 0 0-.659 1.59v3.037c0 .684-.31 1.33-.844 1.757l-1.937 1.55A.75.75 0 0 1 8 18.25v-5.757a2.25 2.25 0 0 0-.659-1.591L2.659 6.22A2.25 2.25 0 0 1 2 4.629V2.34a.75.75 0 0 1 .628-.74Z\" /></svg>";
 
+    private const string PinIcon =
+        "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"currentColor\" class=\"h-3 w-3\"><path fill-rule=\"evenodd\" d=\"M15.5 2.5a1 1 0 0 1 .7.3l5 5a1 1 0 0 1-.3 1.63l-3.1 1.38-2.6 2.6-.9 4.44a1 1 0 0 1-1.68.5l-3.4-3.4-4.4 4.4a1 1 0 0 1-1.4-1.42l4.4-4.4-3.4-3.4a1 1 0 0 1 .5-1.68l4.44-.9 2.6-2.6 1.38-3.1a1 1 0 0 1 .86-.55Z\" clip-rule=\"evenodd\" /></svg>";
+
+    private const string DownloadIcon =
+        "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"currentColor\" class=\"h-4 w-4\"><path d=\"M12 2.25a.75.75 0 0 1 .75.75v11.69l3.22-3.22a.75.75 0 1 1 1.06 1.06l-4.5 4.5a.75.75 0 0 1-1.06 0l-4.5-4.5a.75.75 0 1 1 1.06-1.06l3.22 3.22V3a.75.75 0 0 1 .75-.75Z\" /><path d=\"M3.75 15a.75.75 0 0 1 .75.75v2.25A1.5 1.5 0 0 0 6 19.5h12a1.5 1.5 0 0 0 1.5-1.5v-2.25a.75.75 0 0 1 1.5 0V18a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3v-2.25A.75.75 0 0 1 3.75 15Z\" /></svg>";
+
     private const string SpinnerIcon =
         "<svg xmlns=\"http://www.w3.org/2000/svg\" fill=\"none\" viewBox=\"0 0 24 24\" class=\"h-5 w-5 animate-spin text-brand-600 dark:text-brand-400\"><circle class=\"opacity-25\" cx=\"12\" cy=\"12\" r=\"10\" stroke=\"currentColor\" stroke-width=\"4\"></circle><path class=\"opacity-75\" fill=\"currentColor\" d=\"M4 12a8 8 0 0 1 8-8v4a4 4 0 0 0-4 4H4z\"></path></svg>";
 
@@ -92,7 +98,7 @@ public sealed class GridHtmlRenderer<TItem>
         return merged;
     }
 
-    public ValueTask<string> RenderShellAsync(GridExecutionResult<TItem> initialResult, CancellationToken cancellationToken = default)
+    public ValueTask<string> RenderShellAsync(GridExecutionResult<TItem> initialResult, IReadOnlyList<GridColumn<TItem>>? columnOrder = null, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
@@ -103,7 +109,7 @@ public sealed class GridHtmlRenderer<TItem>
             AppendDocumentStart(writer);
             AppendSiteHeader(writer);
             writer.Write("<main class=\"mx-auto max-w-7xl px-4 py-8\">");
-            AppendGridRoot(writer, initialResult);
+            AppendGridRoot(writer, initialResult, ResolveColumns(columnOrder));
             writer.Write("</main>");
             AppendStateScript(writer, initialResult.Page);
             writer.Write("</body></html>");
@@ -174,7 +180,7 @@ public sealed class GridHtmlRenderer<TItem>
         w.Write("</nav></div></header>");
     }
 
-    private void AppendGridRoot(TextWriter w, GridExecutionResult<TItem> initialResult)
+    private void AppendGridRoot(TextWriter w, GridExecutionResult<TItem> initialResult, IReadOnlyList<GridColumn<TItem>> columns)
     {
         w.Write("<div id=\"");
         AppendEncoded(w, _options.Id);
@@ -184,7 +190,7 @@ public sealed class GridHtmlRenderer<TItem>
 
         AppendToolbar(w);
         AppendFilterChips(w);
-        AppendTableCard(w, initialResult);
+        AppendTableCard(w, initialResult, columns);
         AppendPager(w);
 
         if (_options.EnableRowSelection && _options.RowKey is not null)
@@ -227,6 +233,10 @@ public sealed class GridHtmlRenderer<TItem>
         w.Write(MoonIcon);
         w.Write("</button>");
 
+        w.Write("<button type=\"button\" @click=\"exportCsv()\" class=\"btn-icon\" aria-label=\"Export filtered rows as CSV\">");
+        w.Write(DownloadIcon);
+        w.Write("</button>");
+
         w.Write("<span x-show=\"loading\" x-cloak aria-hidden=\"true\">");
         w.Write(SpinnerIcon);
         w.Write("</span>");
@@ -242,7 +252,7 @@ public sealed class GridHtmlRenderer<TItem>
         w.Write("</button></template></div>");
     }
 
-    private void AppendTableCard(TextWriter w, GridExecutionResult<TItem> initialResult)
+    private void AppendTableCard(TextWriter w, GridExecutionResult<TItem> initialResult, IReadOnlyList<GridColumn<TItem>> columns)
     {
         w.Write("<div data-netgrid-card");
 
@@ -256,13 +266,13 @@ public sealed class GridHtmlRenderer<TItem>
         w.Write(" class=\"relative overflow-x-auto rounded-2xl border border-neutral-200 bg-white shadow-sm dark:border-neutral-800 dark:bg-neutral-900\">");
         w.Write("<table class=\"min-w-full text-sm\">");
 
-        AppendTableHead(w, _visibleColumns);
+        AppendTableHead(w, columns);
 
         w.Write("<tbody id=\"");
         AppendEncoded(w, _options.Id);
         w.Write("-body\">");
 
-        AppendRows(w, initialResult.Page, _visibleColumns);
+        AppendRows(w, initialResult.Page, columns);
 
         w.Write("</tbody></table>");
         w.Write("</div>");
@@ -355,6 +365,16 @@ public sealed class GridHtmlRenderer<TItem>
                 w.Write(FunnelIcon);
                 w.Write("</button>");
             }
+
+            w.Write("<button type=\"button\" class=\"cursor-pointer transition\" :class=\"isPinned(");
+            AppendJsQuoted(w, column.Field);
+            w.Write(") ? 'text-brand-600 dark:text-brand-400' : 'text-neutral-300 hover:text-neutral-500 dark:text-neutral-600 dark:hover:text-neutral-400'\" @click=\"togglePin(");
+            AppendJsQuoted(w, column.Field);
+            w.Write(")\" aria-label=\"Pin column ");
+            AppendEncoded(w, column.Header);
+            w.Write("\">");
+            w.Write(PinIcon);
+            w.Write("</button>");
 
             w.Write("</div>");
 
@@ -536,7 +556,9 @@ public sealed class GridHtmlRenderer<TItem>
 
             foreach (var column in columns)
             {
-                w.Write("<td");
+                w.Write("<td data-field=\"");
+                AppendEncoded(w, column.Field);
+                w.Write("\"");
 
                 if (column.IsPinned)
                 {
@@ -606,7 +628,9 @@ public sealed class GridHtmlRenderer<TItem>
             w.Write(IsFirstFilterable(_visibleColumns[i]) ? "left" : "right");
             w.Write("\",\"mode\":\"");
             w.Write(_visibleColumns[i].IsFilterable && IsListMode(_visibleColumns[i]) ? "list" : "op");
-            w.Write("\"}");
+            w.Write("\",\"pin\":");
+            w.Write(_visibleColumns[i].IsPinned ? "true" : "false");
+            w.Write("}");
         }
 
         w.Write("];</script>");

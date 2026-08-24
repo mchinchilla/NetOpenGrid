@@ -13,5 +13,7 @@ public interface IGridRuntime
 
     ValueTask<string> RenderValuesAsync(string field, GridRequestValues values, CancellationToken cancellationToken = default);
 
+    ValueTask<(string FileName, string Csv)> RenderExportAsync(GridRequestValues values, CancellationToken cancellationToken = default);
+
     ValueTask<string> RenderShellAsync(GridRequestValues values, CancellationToken cancellationToken = default);
 }

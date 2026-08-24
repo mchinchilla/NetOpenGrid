@@ -194,6 +194,80 @@ public class GridEndpointTests : IClassFixture<HostFactory>
         Assert.Contains("data-pin=\"__select\"", html);
         Assert.Contains("draggable=\"true\"", html);
         Assert.Contains("sticky z-30", html);
+        Assert.Contains("\"pin\":true", html);
+    }
+
+    [Fact]
+    public async Task Shell_RespectColsParam_DeepLink()
+    {
+        var client = _factory.CreateClient();
+        var first = EmployeeData.All[0];
+
+        var cols = Uri.EscapeDataString("email,fullName");
+        var html = await (await client.GetAsync($"/netgrid/employees?sort=id&pageSize=1&cols={cols}")).Content.ReadAsStringAsync();
+
+        Assert.True(
+            html.IndexOf(first.Email, StringComparison.Ordinal) < html.IndexOf(first.FullName, StringComparison.Ordinal),
+            "shell should honor cols deep-link ordering");
+    }
+
+    [Fact]
+    public async Task Export_ReturnsFullFilteredDataset_AsCsv()
+    {
+        var client = _factory.CreateClient();
+        var expected = EmployeeData.All.Count(e => e.Department == Department.Design);
+
+        var filter = $"filter={Uri.EscapeDataString("department:equals:Design")}";
+        var response = await client.GetAsync($"/netgrid/employees/export?{filter}&sort=id");
+
+        response.EnsureSuccessStatusCode();
+        Assert.Contains("text/csv", response.Content.Headers.ContentType?.MediaType);
+
+        var disposition = response.Content.Headers.ContentDisposition?.FileName?.Trim('"');
+        Assert.Equal("employees.csv", disposition);
+
+        var csv = await response.Content.ReadAsStringAsync();
+        var lines = csv.Split("\r\n", StringSplitOptions.RemoveEmptyEntries);
+
+        Assert.StartsWith("Full name,email,Department,Salary,Hired on,Score,Status", lines[0]);
+        Assert.Equal(expected + 1, lines.Length);   // header + matching rows (full dataset, not a page)
+    }
+
+    [Fact]
+    public async Task Export_RespectsColsOrder()
+    {
+        var client = _factory.CreateClient();
+        var cols = Uri.EscapeDataString("email,fullName");
+
+        var csv = await (await client.GetAsync($"/netgrid/employees/export?sort=id&pageSize=1&cols={cols}")).Content.ReadAsStringAsync();
+        var header = csv.Split("\r\n")[0];
+
+        Assert.StartsWith("email,Full name,", header);
+    }
+
+    private sealed record CsvRow(string Name, string City);
+
+    [Fact]
+    public void CsvExporter_EscapesQuotesCommasAndNewlines()
+    {
+        var options = new NetOpenGrid.Application.Builders.GridOptionsBuilder<CsvRow>()
+            .WithId("csv")
+            .AddColumn("name", r => r.Name)
+            .AddColumn("city", r => r.City)
+            .Build();
+
+        var rows = new List<CsvRow>
+        {
+            new("Ana, jr", "Madrid"),
+            new("Say \"hi\"", "Li\nma")
+        };
+
+        var csv = NetOpenGrid.Infrastructure.Export.GridCsvExporter.Build(options.Columns, rows);
+        var lines = csv.Split("\r\n", StringSplitOptions.RemoveEmptyEntries);
+
+        Assert.Equal("name,city", lines[0]);
+        Assert.Equal("\"Ana, jr\",Madrid", lines[1]);
+        Assert.Equal("\"Say \"\"hi\"\"\",\"Li\nma\"", lines[2]);
     }
 
     [Fact]
