@@ -14,7 +14,7 @@ No virtual DOM. No reflection on the hot path. No per-request expression compila
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind-v4-06B6D4?style=for-the-badge&logo=tailwindcss&logoColor=white)](https://tailwindcss.com)
 [![HTMX](https://img.shields.io/badge/HTMX-2-3D72D7?style=for-the-badge)](https://htmx.org)
 [![Alpine.js](https://img.shields.io/badge/Alpine.js-3-77C1CB?style=for-the-badge&logo=alpinedotjs&logoColor=white)](https://alpinejs.dev)
-[![Tests](https://img.shields.io/badge/tests-86%20passing-16A34A?style=for-the-badge&logo=xunit&logoColor=white)](#-testing)
+[![Tests](https://img.shields.io/badge/tests-91%20passing-16A34A?style=for-the-badge&logo=xunit&logoColor=white)](#-testing)
 [![License](https://img.shields.io/badge/License-MIT-F59E0B?style=for-the-badge)](LICENSE)
 
 </div>
@@ -305,6 +305,25 @@ filter, search, sort and column order (`cols`) — RFC-4180 with comma/quote/new
 
 ---
 
+## 🌐 i18n
+
+Every client-facing label (buttons, aria-labels, operators, counters, ranges) flows through
+`NetOpenGridLocalizationOptions`: English defaults, a bundled **Spanish** preset, and per-key overrides.
+
+```csharp
+builder.Services.AddNetOpenGrid(
+    o => { o.AssetPrefix = "/_netgrid"; },
+    loc => loc.UseCulture("es")                       // bundled preset
+              .Set("filter.apply", "Filtrar"));       // fine-grained override
+```
+
+- The shell injects `__NETGRID__.locale` with the effective dictionary: Alpine renders chips,
+  counters and ranges with the exact same strings (EN fallbacks embedded in the JS).
+- ~39 keys: `search.*`, `pager.*`, `records.*`, `range.*`, `filter.*`, `select.*`, `chips.*`, `ops.*`, `pin.aria`, `theme.aria`, `export.aria`.
+- The empty message remains `WithEmptyMessage(...)` (per grid).
+
+---
+
 ## 📚 Configuration reference
 
 ### `GridOptionsBuilder<T>`
@@ -479,7 +498,7 @@ dotnet test
 - [x] `EFCoreGridDataSource<T>`: filter/sort push-down to SQL reusing the same strategies
 - [x] Excel-style filters with per-value counts
 - [x] Pinned and reorderable columns
-- [ ] Client label i18n
+- [x] Client label i18n
 - [x] Generic server-side export (CSV) as part of the component
 
 ---

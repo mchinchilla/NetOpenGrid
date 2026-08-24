@@ -14,7 +14,7 @@ Sin virtual DOM. Sin reflexión en el hot path. Sin compilar expresiones por req
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind-v4-06B6D4?style=for-the-badge&logo=tailwindcss&logoColor=white)](https://tailwindcss.com)
 [![HTMX](https://img.shields.io/badge/HTMX-2-3D72D7?style=for-the-badge)](https://htmx.org)
 [![Alpine.js](https://img.shields.io/badge/Alpine.js-3-77C1CB?style=for-the-badge&logo=alpinedotjs&logoColor=white)](https://alpinejs.dev)
-[![Tests](https://img.shields.io/badge/tests-86%20passing-16A34A?style=for-the-badge&logo=xunit&logoColor=white)](#-testing)
+[![Tests](https://img.shields.io/badge/tests-91%20passing-16A34A?style=for-the-badge&logo=xunit&logoColor=white)](#-testing)
 [![License](https://img.shields.io/badge/License-MIT-F59E0B?style=for-the-badge)](LICENSE)
 
 </div>
@@ -305,6 +305,25 @@ filtro, búsqueda, orden y orden de columnas (`cols`) actual — RFC-4180, escap
 
 ---
 
+## 🌐 i18n
+
+Todos los labels del cliente (botones, aria-labels, operadores, contadores, rangos) pasan por
+`NetOpenGridLocalizationOptions`: defaults en inglés, preset **español** incluido y override por clave.
+
+```csharp
+builder.Services.AddNetOpenGrid(
+    o => { o.AssetPrefix = "/_netgrid"; },
+    loc => loc.UseCulture("es")                       // preset incluido
+              .Set("filter.apply", "Filtrar"));       // override fino
+```
+
+- El shell inyecta `__NETGRID__.locale` con el diccionario efectivo: Alpine renderiza chips,
+  contadores y rangos con las mismas cadenas (fallbacks EN embebidos en el JS).
+- ~39 claves: `search.*`, `pager.*`, `records.*`, `range.*`, `filter.*`, `select.*`, `chips.*`, `ops.*`, `pin.aria`, `theme.aria`, `export.aria`.
+- El mensaje de vacío sigue siendo `WithEmptyMessage(...)` (por grid).
+
+---
+
 ## 📚 Referencia de configuración
 
 ### `GridOptionsBuilder<T>`
@@ -478,7 +497,7 @@ dotnet test
 - [x] `EFCoreGridDataSource<T>`: push-down de filtros/sort a SQL reutilizando las mismas estrategias
 - [x] Filtros tipo Excel con conteo por valor
 - [x] Columnas fijadas (pin) y reordenables
-- [ ] i18n de labels del cliente
+- [x] i18n de labels del cliente
 - [x] Export server-side genérico (CSV) como parte del componente
 
 ---

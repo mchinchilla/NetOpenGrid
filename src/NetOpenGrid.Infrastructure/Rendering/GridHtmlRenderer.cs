@@ -21,6 +21,8 @@ public sealed class GridHtmlRenderer<TItem>
 {
     private static readonly HtmlEncoder Encoder = HtmlEncoder.Default;
 
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+
     private const string SearchIcon =
         "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 20 20\" fill=\"currentColor\" class=\"h-4 w-4\"><path fill-rule=\"evenodd\" d=\"M9 3.5a5.5 5.5 0 1 0 0 11 5.5 5.5 0 0 0 0-11ZM2 9a7 7 0 1 1 12.452 4.391l3.328 3.329a.75.75 0 1 1-1.06 1.06l-3.329-3.328A7 7 0 0 1 2 9Z\" clip-rule=\"evenodd\" /></svg>";
 
@@ -47,19 +49,23 @@ public sealed class GridHtmlRenderer<TItem>
 
     private readonly GridOptions<TItem> _options;
     private readonly NetOpenGridAssetOptions _assetOptions;
+    private readonly NetOpenGridLocalizationOptions _locale;
     private readonly IReadOnlyList<GridColumn<TItem>> _visibleColumns;
     private readonly ObjectPool<StringBuilder> _stringBuilderPool;
 
-    public GridHtmlRenderer(GridOptions<TItem> options, NetOpenGridAssetOptions assetOptions)
+    public GridHtmlRenderer(GridOptions<TItem> options, NetOpenGridAssetOptions assetOptions, NetOpenGridLocalizationOptions? localizationOptions = null)
     {
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(assetOptions);
         _options = options;
         _assetOptions = assetOptions;
+        _locale = localizationOptions ?? new NetOpenGridLocalizationOptions();
         _visibleColumns = options.Columns.Where(static c => c.IsVisible).ToArray();
         _stringBuilderPool = new DefaultObjectPoolProvider()
             .CreateStringBuilderPool(initialCapacity: 4096, maximumRetainedCapacity: 256 * 1024);
     }
+
+    private string L(string key) => _locale[key];
 
     public ValueTask<string> RenderRowsAsync(GridExecutionResult<TItem> result, IReadOnlyList<GridColumn<TItem>>? columnOrder = null, CancellationToken cancellationToken = default)
     {
@@ -217,7 +223,7 @@ public sealed class GridHtmlRenderer<TItem>
             w.Write("</p>");
         }
 
-        w.Write("<span class=\"text-sm text-neutral-500 dark:text-neutral-400\" x-text=\"meta.total === 1 ? '1 record' : meta.total + ' records'\"></span>");
+        w.Write("<span class=\"text-sm text-neutral-500 dark:text-neutral-400\" x-text=\"recordsLabel\"></span>");
 
         w.Write("<div class=\"relative ml-auto w-full max-w-xs sm:w-64\">");
         w.Write("<span class=\"pointer-events-none absolute left-3 top-2 text-neutral-400\">");
@@ -225,15 +231,23 @@ public sealed class GridHtmlRenderer<TItem>
         w.Write("</span>");
         w.Write("<input type=\"search\" x-model=\"q\" @input.debounce.");
         w.Write(debounceMs.ToString(CultureInfo.InvariantCulture));
-        w.Write("ms=\"onSearch()\" placeholder=\"Search...\" aria-label=\"Search\" class=\"input-base pl-9\">");
+        w.Write("ms=\"onSearch()\" placeholder=\"");
+        w.Write(L("search.placeholder"));
+        w.Write("\" aria-label=\"");
+        w.Write(L("search.aria"));
+        w.Write("\" class=\"input-base pl-9\">");
         w.Write("</div>");
 
-        w.Write("<button type=\"button\" @click=\"toggleTheme()\" class=\"btn-icon\" aria-label=\"Toggle color theme\">");
+        w.Write("<button type=\"button\" @click=\"toggleTheme()\" class=\"btn-icon\" aria-label=\"");
+        w.Write(L("theme.aria"));
+        w.Write("\">");
         w.Write(SunIcon);
         w.Write(MoonIcon);
         w.Write("</button>");
 
-        w.Write("<button type=\"button\" @click=\"exportCsv()\" class=\"btn-icon\" aria-label=\"Export filtered rows as CSV\">");
+        w.Write("<button type=\"button\" @click=\"exportCsv()\" class=\"btn-icon\" aria-label=\"");
+        w.Write(L("export.aria"));
+        w.Write("\">");
         w.Write(DownloadIcon);
         w.Write("</button>");
 
@@ -247,7 +261,9 @@ public sealed class GridHtmlRenderer<TItem>
     {
         w.Write("<div class=\"flex flex-wrap items-center gap-2\" x-show=\"activeFilters.length\" x-cloak>");
         w.Write("<template x-for=\"entry in activeFilters\" :key=\"entry.field\">");
-        w.Write("<button type=\"button\" @click=\"clearFilter(entry.field)\" class=\"chip\" title=\"Remove filter\">");
+        w.Write("<button type=\"button\" @click=\"clearFilter(entry.field)\" class=\"chip\" title=\"");
+        w.Write(L("chips.remove"));
+        w.Write("\">");
         w.Write("<span x-text=\"entry.label\"></span><span aria-hidden=\"true\">&times;</span>");
         w.Write("</button></template></div>");
     }
@@ -285,7 +301,9 @@ public sealed class GridHtmlRenderer<TItem>
         if (_options.EnableRowSelection && _options.RowKey is not null)
         {
             w.Write("<th scope=\"col\" data-pin=\"__select\" style=\"left:0\" class=\"sticky z-30 w-10 border-r border-neutral-200 bg-neutral-50 px-4 py-3 dark:border-neutral-800 dark:bg-neutral-800/60\">");
-            w.Write("<input type=\"checkbox\" class=\"h-4 w-4 accent-brand-600\" aria-label=\"Select all on page\" :checked=\"allPageSelected\" @change=\"togglePageAll($event.target.checked)\">");
+            w.Write("<input type=\"checkbox\" class=\"h-4 w-4 accent-brand-600\" aria-label=\"");
+        w.Write(L("select.all.aria"));
+        w.Write("\" :checked=\"allPageSelected\" @change=\"togglePageAll($event.target.checked)\">");
             w.Write("</th>");
         }
 
@@ -359,8 +377,8 @@ public sealed class GridHtmlRenderer<TItem>
                 AppendJsQuoted(w, column.Field);
                 w.Write(") ? 'text-brand-600 dark:text-brand-400' : 'text-neutral-400'\" @click=\"openFilter(");
                 AppendJsQuoted(w, column.Field);
-                w.Write(", $event)\" aria-label=\"Filter ");
-                AppendEncoded(w, column.Header);
+                w.Write(", $event)\" aria-label=\"");
+                w.Write(L("filter.aria").Replace("{field}", column.Header));
                 w.Write("\">");
                 w.Write(FunnelIcon);
                 w.Write("</button>");
@@ -370,8 +388,8 @@ public sealed class GridHtmlRenderer<TItem>
             AppendJsQuoted(w, column.Field);
             w.Write(") ? 'text-brand-600 dark:text-brand-400' : 'text-neutral-300 hover:text-neutral-500 dark:text-neutral-600 dark:hover:text-neutral-400'\" @click=\"togglePin(");
             AppendJsQuoted(w, column.Field);
-            w.Write(")\" aria-label=\"Pin column ");
-            AppendEncoded(w, column.Header);
+            w.Write(")\" aria-label=\"");
+            w.Write(L("pin.aria").Replace("{field}", column.Header));
             w.Write("\">");
             w.Write(PinIcon);
             w.Write("</button>");
@@ -412,8 +430,12 @@ public sealed class GridHtmlRenderer<TItem>
         }
 
         w.Write("<div class=\"flex justify-end gap-2 pt-1\">");
-        w.Write("<button type=\"button\" class=\"btn-ghost-sm\" @click=\"clearFilter(editing); cancelEditing()\">Clear</button>");
-        w.Write("<button type=\"button\" class=\"btn-primary-sm\" @click=\"applyFilter()\">Apply</button>");
+        w.Write("<button type=\"button\" class=\"btn-ghost-sm\" @click=\"clearFilter(editing); cancelEditing()\">");
+        w.Write(L("filter.clear"));
+        w.Write("</button>");
+        w.Write("<button type=\"button\" class=\"btn-primary-sm\" @click=\"applyFilter()\">");
+        w.Write(L("filter.apply"));
+        w.Write("</button>");
         w.Write("</div></div>");
     }
 
@@ -422,7 +444,9 @@ public sealed class GridHtmlRenderer<TItem>
 
     private void AppendValueListBody(TextWriter w, GridColumn<TItem> column)
     {
-        w.Write("<input type=\"search\" x-model=\"listSearch\" placeholder=\"Filter values...\" class=\"input-base\">");
+        w.Write("<input type=\"search\" x-model=\"listSearch\" placeholder=\"");
+        w.Write(L("filter.values.search"));
+        w.Write("\" class=\"input-base\">");
 
         w.Write("<label class=\"flex cursor-pointer items-center gap-2 text-sm font-medium\">");
         w.Write("<input type=\"checkbox\" class=\"h-4 w-4 accent-brand-600\" :checked=\"listAllSelected(");
@@ -430,13 +454,17 @@ public sealed class GridHtmlRenderer<TItem>
         w.Write(")\" @change=\"toggleListAll(");
         AppendJsQuoted(w, column.Field);
         w.Write(", $event.target.checked)\">");
-        w.Write("<span>Select all</span>");
+        w.Write("<span>");
+        w.Write(L("filter.values.selectAll"));
+        w.Write("</span>");
         w.Write("</label>");
 
         w.Write("<div class=\"max-h-56 space-y-1 overflow-y-auto pr-1\">");
         w.Write("<div x-show=\"!listItems[");
         AppendJsQuoted(w, column.Field);
-        w.Write("]\" class=\"text-sm text-neutral-400\">Loading...</div>");
+        w.Write("]\" class=\"text-sm text-neutral-400\">");
+        w.Write(L("filter.values.loading"));
+        w.Write("</div>");
         w.Write("<template x-for=\"item in visibleListItems(");
         AppendJsQuoted(w, column.Field);
         w.Write(")\" :key=\"item.value\">");
@@ -467,12 +495,14 @@ public sealed class GridHtmlRenderer<TItem>
             w.Write("<option value=\"");
             AppendEncoded(w, FilterOperatorMapper.ToToken(op));
             w.Write("\">");
-            AppendEncoded(w, OperatorLabel(op));
+            AppendEncoded(w, L("ops." + FilterOperatorMapper.ToToken(op)));
             w.Write("</option>");
         }
 
         w.Write("</select>");
-        w.Write("<input type=\"text\" x-show=\"!isEmptyOp(editingOp)\" x-model=\"editingValue\" @keydown.enter.prevent=\"applyFilter()\" placeholder=\"Value\" class=\"input-base\">");
+        w.Write("<input type=\"text\" x-show=\"!isEmptyOp(editingOp)\" x-model=\"editingValue\" @keydown.enter.prevent=\"applyFilter()\" placeholder=\"");
+        w.Write(L("filter.value.placeholder"));
+        w.Write("\" class=\"input-base\">");
     }
 
     private void AppendPager(TextWriter w)
@@ -480,7 +510,9 @@ public sealed class GridHtmlRenderer<TItem>
         w.Write("<div class=\"flex items-center justify-between text-sm\">");
         w.Write("<span class=\"text-neutral-500 dark:text-neutral-400\" x-text=\"rangeLabel\"></span>");
         w.Write("<div class=\"flex items-center gap-2\">");
-        w.Write("<select x-model.number=\"pageSize\" @change=\"onPageSize()\" aria-label=\"Rows per page\" class=\"input-base !w-auto py-1.5\">");
+        w.Write("<select x-model.number=\"pageSize\" @change=\"onPageSize()\" aria-label=\"");
+        w.Write(L("pager.rowsPerPage"));
+        w.Write("\" class=\"input-base !w-auto py-1.5\">");
 
         foreach (var choice in _options.PageSizeChoices)
         {
@@ -492,9 +524,13 @@ public sealed class GridHtmlRenderer<TItem>
         }
 
         w.Write("</select>");
-        w.Write("<button type=\"button\" class=\"btn-ghost\" :disabled=\"page <= 1\" @click=\"go(-1)\">Prev</button>");
+        w.Write("<button type=\"button\" class=\"btn-ghost\" :disabled=\"page <= 1\" @click=\"go(-1)\">");
+        w.Write(L("pager.prev"));
+        w.Write("</button>");
         w.Write("<span class=\"px-1 tabular-nums\" x-text=\"page + ' / ' + totalPages\"></span>");
-        w.Write("<button type=\"button\" class=\"btn-ghost\" :disabled=\"page >= totalPages\" @click=\"go(1)\">Next</button>");
+        w.Write("<button type=\"button\" class=\"btn-ghost\" :disabled=\"page >= totalPages\" @click=\"go(1)\">");
+        w.Write(L("pager.next"));
+        w.Write("</button>");
         w.Write("</div></div>");
     }
 
@@ -502,12 +538,16 @@ public sealed class GridHtmlRenderer<TItem>
     {
         w.Write("<div x-show=\"selected.length > 0\" x-cloak x-transition ");
         w.Write("class=\"fixed bottom-6 left-1/2 z-40 flex -translate-x-1/2 items-center gap-4 rounded-full bg-neutral-900 px-5 py-2.5 text-white shadow-lg dark:bg-white dark:text-neutral-900\">");
-        w.Write("<span class=\"text-sm font-medium\" x-text=\"selected.length === 1 ? '1 selected' : selected.length + ' selected'\"></span>");
+        w.Write("<span class=\"text-sm font-medium\" x-text=\"selectedLabel\"></span>");
         w.Write("<form method=\"post\" :action=\"'/netgrid/' + id + '/export'\" class=\"contents\">");
         w.Write("<input type=\"hidden\" name=\"ids\" :value=\"selected.join(',')\">");
-        w.Write("<button type=\"submit\" class=\"btn-primary-sm\">Export CSV</button>");
+        w.Write("<button type=\"submit\" class=\"btn-primary-sm\">");
+        w.Write(L("select.export"));
+        w.Write("</button>");
         w.Write("</form>");
-        w.Write("<button type=\"button\" class=\"text-sm underline underline-offset-2 opacity-80 hover:opacity-100\" @click=\"clearSelection()\">Clear</button>");
+        w.Write("<button type=\"button\" class=\"text-sm underline underline-offset-2 opacity-80 hover:opacity-100\" @click=\"clearSelection()\">");
+        w.Write(L("select.clear"));
+        w.Write("</button>");
         w.Write("</div>");
     }
 
@@ -548,7 +588,9 @@ public sealed class GridHtmlRenderer<TItem>
             if (_options.EnableRowSelection && rowKey is not null)
             {
                 w.Write("<td data-pin=\"__select\" style=\"left:0\" class=\"sticky left-0 z-10 w-10 border-r border-neutral-100 bg-white px-4 py-2 align-middle hover:bg-brand-50/40 dark:border-neutral-800/60 dark:bg-neutral-900 dark:hover:bg-white/[0.04]\">");
-                w.Write("<input type=\"checkbox\" class=\"h-4 w-4 accent-brand-600\" aria-label=\"Select row\" @change=\"toggleSelection($el.closest('tr').dataset.id)\" :checked=\"isSelected(");
+                w.Write("<input type=\"checkbox\" class=\"h-4 w-4 accent-brand-600\" aria-label=\"");
+        w.Write(L("select.row.aria"));
+        w.Write("\" @change=\"toggleSelection($el.closest('tr').dataset.id)\" :checked=\"isSelected(");
                 AppendJsQuoted(w, rowKey);
                 w.Write(")\">");
                 w.Write("</td>");
@@ -633,7 +675,9 @@ public sealed class GridHtmlRenderer<TItem>
             w.Write("}");
         }
 
-        w.Write("];</script>");
+        w.Write("__NETGRID__.locale=");
+        w.Write(JsonSerializer.Serialize(_locale.Strings, JsonOptions));
+        w.Write(";</script>");
     }
 
     private bool IsFirstFilterable(GridColumn<TItem> column)
@@ -648,22 +692,6 @@ public sealed class GridHtmlRenderer<TItem>
 
         return false;
     }
-
-    internal static string OperatorLabel(FilterOperator op) => op switch
-    {
-        FilterOperator.Equals => "equals",
-        FilterOperator.NotEquals => "not equals",
-        FilterOperator.Contains => "contains",
-        FilterOperator.StartsWith => "starts with",
-        FilterOperator.EndsWith => "ends with",
-        FilterOperator.GreaterThan => "greater than",
-        FilterOperator.GreaterThanOrEqual => "greater or equal",
-        FilterOperator.LessThan => "less than",
-        FilterOperator.LessThanOrEqual => "less or equal",
-        FilterOperator.IsEmpty => "is empty",
-        FilterOperator.IsNotEmpty => "is not empty",
-        _ => op.ToString()
-    };
 
     private static string TextAlignClass(ColumnAlign align) => align switch
     {

@@ -21,14 +21,19 @@ public sealed class GridRuntime<TItem> : IGridRuntime
     private readonly IGridDataSource<TItem> _dataSource;
     private readonly Rendering.GridHtmlRenderer<TItem> _renderer;
 
-    public GridRuntime(GridOptions<TItem> options, IGridDataSource<TItem> dataSource, NetOpenGridAssetOptions assetOptions)
+    public GridRuntime(
+        GridOptions<TItem> options,
+        IGridDataSource<TItem> dataSource,
+        NetOpenGridAssetOptions assetOptions,
+        NetOpenGridLocalizationOptions localizationOptions)
     {
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(dataSource);
         ArgumentNullException.ThrowIfNull(assetOptions);
+        ArgumentNullException.ThrowIfNull(localizationOptions);
         _options = options;
         _dataSource = dataSource;
-        _renderer = new Rendering.GridHtmlRenderer<TItem>(options, assetOptions);
+        _renderer = new Rendering.GridHtmlRenderer<TItem>(options, assetOptions, localizationOptions);
     }
 
     public string Id => _options.Id;

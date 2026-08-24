@@ -11,17 +11,28 @@ public static class NetOpenGridServiceCollectionExtensions
 {
     public static NetOpenGridBuilder AddNetOpenGrid(this IServiceCollection services)
     {
-        return services.AddNetOpenGrid(_ => { });
+        return services.AddNetOpenGrid(_ => { }, _ => { });
     }
 
     public static NetOpenGridBuilder AddNetOpenGrid(this IServiceCollection services, Action<NetOpenGridAssetOptions> configure)
     {
+        return services.AddNetOpenGrid(configure, _ => { });
+    }
+
+    public static NetOpenGridBuilder AddNetOpenGrid(
+        this IServiceCollection services,
+        Action<NetOpenGridAssetOptions>? configure,
+        Action<NetOpenGridLocalizationOptions>? localize)
+    {
         ArgumentNullException.ThrowIfNull(services);
-        ArgumentNullException.ThrowIfNull(configure);
 
         var assetOptions = new NetOpenGridAssetOptions();
-        configure(assetOptions);
+        configure?.Invoke(assetOptions);
         services.AddSingleton(assetOptions);
+
+        var localizationOptions = new NetOpenGridLocalizationOptions();
+        localize?.Invoke(localizationOptions);
+        services.AddSingleton(localizationOptions);
 
         return new NetOpenGridBuilder(services);
     }
@@ -69,7 +80,8 @@ public sealed class NetOpenGridBuilder(IServiceCollection services)
             (serviceProvider, _) => new GridRuntime<TItem>(
                 options,
                 dataSourceFactory(serviceProvider, options),
-                serviceProvider.GetRequiredService<NetOpenGridAssetOptions>()));
+                serviceProvider.GetRequiredService<NetOpenGridAssetOptions>(),
+                serviceProvider.GetRequiredService<NetOpenGridLocalizationOptions>()));
 
         return this;
     }

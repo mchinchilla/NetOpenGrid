@@ -32,7 +32,13 @@ var ordersOptions = new JsonGridOptionsBuilder()
     .AddColumn("placedAt", c => c.Header("Placed at").Sortable())
     .Build();
 
-builder.Services.AddNetOpenGrid()
+builder.Services.AddNetOpenGrid(
+    o =>
+    {
+        o.AssetPrefix = "/_netgrid";
+        o.CssPath = "/css";
+    },
+    loc => loc.UseCulture("es"))
     .AddGrid<Employee>("employees", options => options
         .WithTitle("Employees")
         .WithSubtitle("Typed <T> source, precompiled strategies")

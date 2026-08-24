@@ -2,20 +2,6 @@
 (() => {
   'use strict';
 
-  const OP_LABELS = {
-    'equals': 'equals',
-    'not-equals': 'not equals',
-    'contains': 'contains',
-    'starts-with': 'starts with',
-    'ends-with': 'ends with',
-    'gt': 'greater than',
-    'gte': 'greater or equal',
-    'lt': 'less than',
-    'lte': 'less or equal',
-    'is-empty': 'is empty',
-    'is-not-empty': 'is not empty'
-  };
-
   const THEME_KEY = 'netgrid:theme';
   const MAX_SEARCH = 200;
 
@@ -37,6 +23,39 @@
     }
     tokens.push(raw.slice(start).trim());
     return tokens.filter((t) => t.length > 0);
+  };
+
+  const FALLBACK = {
+    'records.one': '1 record',
+    'records.many': '{n} records',
+    'range.empty': 'No records',
+    'range.format': '{from}-{to} of {total}',
+    'select.selected.one': '1 selected',
+    'select.selected.many': '{n} selected',
+    'chips.anyOf': 'any of {values}',
+    'chips.anyOfMore': 'any of {values} +{n}',
+    'filter.values.truncated': 'Showing {shown} of {total} values',
+    'ops.equals': 'equals',
+    'ops.not-equals': 'not equals',
+    'ops.contains': 'contains',
+    'ops.starts-with': 'starts with',
+    'ops.ends-with': 'ends with',
+    'ops.gt': 'greater than',
+    'ops.gte': 'greater or equal',
+    'ops.lt': 'less than',
+    'ops.lte': 'less or equal',
+    'ops.is-empty': 'is empty',
+    'ops.is-not-empty': 'is not empty'
+  };
+
+  const L = (key, vars) => {
+    let out = window.__NETGRID__?.locale?.[key] || FALLBACK[key] || key;
+    if (vars) {
+      for (const [k, v] of Object.entries(vars)) {
+        out = out.replaceAll(`{${k}}`, String(v));
+      }
+    }
+    return out;
   };
 
   const parseInValues = (json) => {
@@ -117,10 +136,22 @@
       },
 
       get rangeLabel() {
-        if (this.meta.total === 0) return 'No records';
+        if (this.meta.total === 0) return L('range.empty');
         const from = (this.page - 1) * this.pageSize + 1;
         const to = Math.min(this.page * this.pageSize, this.meta.total);
-        return `${from}-${to} of ${this.meta.total}`;
+        return L('range.format', { from, to, total: this.meta.total });
+      },
+
+      get recordsLabel() {
+        return this.meta.total === 1
+          ? L('records.one')
+          : L('records.many', { n: this.meta.total });
+      },
+
+      get selectedLabel() {
+        return this.selected.length === 1
+          ? L('select.selected.one')
+          : L('select.selected.many', { n: this.selected.length });
       },
 
       get activeFilters() {
@@ -136,10 +167,13 @@
         if (f.op === 'in') {
           const values = parseInValues(f.value);
           const shown = values.slice(0, 2).join(', ');
-          return values.length > 2 ? `any of ${shown} +${values.length - 2}` : `any of ${shown}`;
+          return values.length > 2
+            ? L('chips.anyOfMore', { values: shown, n: values.length - 2 })
+            : L('chips.anyOf', { values: shown });
         }
 
-        return `${OP_LABELS[f.op] || f.op}${isEmptyOp(f.op) ? '' : ` ${f.value}`}`;
+        const opText = L(`ops.${f.op}`);
+        return `${opText}${isEmptyOp(f.op) ? '' : ` ${f.value}`}`;
       },
 
       get allPageSelected() {
@@ -471,7 +505,7 @@
       listTruncatedLabel(field) {
         const meta = this.listMeta[field];
         if (!meta) return '';
-        return `Showing ${this.listItems[field]?.length ?? 0} of ${meta.totalDistinct} values`;
+        return L('filter.values.truncated', { shown: this.listItems[field]?.length ?? 0, total: meta.totalDistinct });
       },
 
       popoverClass(field) {
