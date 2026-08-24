@@ -15,6 +15,7 @@ Sin virtual DOM. Sin reflexión en el hot path. Sin compilar expresiones por req
 [![HTMX](https://img.shields.io/badge/HTMX-2-3D72D7?style=for-the-badge)](https://htmx.org)
 [![Alpine.js](https://img.shields.io/badge/Alpine.js-3-77C1CB?style=for-the-badge&logo=alpinedotjs&logoColor=white)](https://alpinejs.dev)
 [![Tests](https://img.shields.io/badge/tests-67%20passing-16A34A?style=for-the-badge&logo=xunit&logoColor=white)](#-testing)
+[![License](https://img.shields.io/badge/License-MIT-F59E0B?style=for-the-badge)](LICENSE)
 
 </div>
 
@@ -37,6 +38,7 @@ Sin virtual DOM. Sin reflexión en el hot path. Sin compilar expresiones por req
 - [Estructura del proyecto](#-estructura-del-proyecto)
 - [Testing](#-testing)
 - [Roadmap](#-roadmap)
+- [Licencia](#-licencia)
 
 ---
 
@@ -427,6 +429,12 @@ dotnet test
 - [ ] Columnas fijadas (pin) y reordenables
 - [ ] i18n de labels del cliente
 - [ ] Export server-side genérico (CSV/Excel) como parte del componente
+
+---
+
+## 📄 Licencia
+
+[MIT](LICENSE) — úsalo, modifícalo y distribúyelo libremente; attribution incluida en el archivo.
 
 ---
 

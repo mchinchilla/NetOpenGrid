@@ -15,6 +15,7 @@ No virtual DOM. No reflection on the hot path. No per-request expression compila
 [![HTMX](https://img.shields.io/badge/HTMX-2-3D72D7?style=for-the-badge)](https://htmx.org)
 [![Alpine.js](https://img.shields.io/badge/Alpine.js-3-77C1CB?style=for-the-badge&logo=alpinedotjs&logoColor=white)](https://alpinejs.dev)
 [![Tests](https://img.shields.io/badge/tests-67%20passing-16A34A?style=for-the-badge&logo=xunit&logoColor=white)](#-testing)
+[![License](https://img.shields.io/badge/License-MIT-F59E0B?style=for-the-badge)](LICENSE)
 
 </div>
 
@@ -37,6 +38,7 @@ No virtual DOM. No reflection on the hot path. No per-request expression compila
 - [Project layout](#-project-layout)
 - [Testing](#-testing)
 - [Roadmap](#-roadmap)
+- [License](#-license)
 
 ---
 
@@ -428,6 +430,12 @@ dotnet test
 - [ ] Pinned and reorderable columns
 - [ ] Client label i18n
 - [ ] Generic server-side export (CSV/Excel) as part of the component
+
+---
+
+## 📄 License
+
+[MIT](LICENSE) — use, modify and distribute freely; attribution lives in the file.
 
 ---
 
