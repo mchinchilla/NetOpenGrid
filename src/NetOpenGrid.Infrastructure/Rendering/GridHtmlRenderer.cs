@@ -55,21 +55,41 @@ public sealed class GridHtmlRenderer<TItem>
             .CreateStringBuilderPool(initialCapacity: 4096, maximumRetainedCapacity: 256 * 1024);
     }
 
-    public ValueTask<string> RenderRowsAsync(GridExecutionResult<TItem> result, CancellationToken cancellationToken = default)
+    public ValueTask<string> RenderRowsAsync(GridExecutionResult<TItem> result, IReadOnlyList<GridColumn<TItem>>? columnOrder = null, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
+        var columns = ResolveColumns(columnOrder);
         var sb = _stringBuilderPool.Get();
         try
         {
             using var writer = new StringWriter(sb);
-            AppendRows(writer, result.Page);
+            AppendRows(writer, result.Page, columns);
             return ValueTask.FromResult(sb.ToString());
         }
         finally
         {
             _stringBuilderPool.Return(sb.Clear());
         }
+    }
+
+    private IReadOnlyList<GridColumn<TItem>> ResolveColumns(IReadOnlyList<GridColumn<TItem>>? columnOrder)
+    {
+        if (columnOrder is null || columnOrder.Count == 0)
+        {
+            return _visibleColumns;
+        }
+
+        var merged = new List<GridColumn<TItem>>(columnOrder);
+        foreach (var column in _visibleColumns)
+        {
+            if (!merged.Contains(column))
+            {
+                merged.Add(column);
+            }
+        }
+
+        return merged;
     }
 
     public ValueTask<string> RenderShellAsync(GridExecutionResult<TItem> initialResult, CancellationToken cancellationToken = default)
@@ -236,32 +256,32 @@ public sealed class GridHtmlRenderer<TItem>
         w.Write(" class=\"relative overflow-x-auto rounded-2xl border border-neutral-200 bg-white shadow-sm dark:border-neutral-800 dark:bg-neutral-900\">");
         w.Write("<table class=\"min-w-full text-sm\">");
 
-        AppendTableHead(w);
+        AppendTableHead(w, _visibleColumns);
 
         w.Write("<tbody id=\"");
         AppendEncoded(w, _options.Id);
         w.Write("-body\">");
 
-        AppendRows(w, initialResult.Page);
+        AppendRows(w, initialResult.Page, _visibleColumns);
 
         w.Write("</tbody></table>");
         w.Write("</div>");
     }
 
-    private void AppendTableHead(TextWriter w)
+    private void AppendTableHead(TextWriter w, IReadOnlyList<GridColumn<TItem>> columns)
     {
         w.Write("<thead class=\"bg-neutral-50 dark:bg-neutral-800/60\"><tr>");
 
         if (_options.EnableRowSelection && _options.RowKey is not null)
         {
-            w.Write("<th scope=\"col\" class=\"w-10 px-4 py-3\">");
+            w.Write("<th scope=\"col\" data-pin=\"__select\" style=\"left:0\" class=\"sticky z-30 w-10 border-r border-neutral-200 bg-neutral-50 px-4 py-3 dark:border-neutral-800 dark:bg-neutral-800/60\">");
             w.Write("<input type=\"checkbox\" class=\"h-4 w-4 accent-brand-600\" aria-label=\"Select all on page\" :checked=\"allPageSelected\" @change=\"togglePageAll($event.target.checked)\">");
             w.Write("</th>");
         }
 
         var firstFilterableSeen = false;
 
-        foreach (var column in _visibleColumns)
+        foreach (var column in columns)
         {
             var isFirstFilterable = column.IsFilterable && !firstFilterableSeen;
             if (isFirstFilterable)
@@ -269,7 +289,25 @@ public sealed class GridHtmlRenderer<TItem>
                 firstFilterableSeen = true;
             }
 
-            w.Write("<th scope=\"col\" class=\"relative px-4 py-3 font-medium text-neutral-600 select-none dark:text-neutral-300 ");
+            w.Write("<th scope=\"col\" draggable=\"true\" @dragstart=\"onColumnDragStart(");
+            AppendJsQuoted(w, column.Field);
+            w.Write(", $event)\" @dragover.prevent @drop=\"onColumnDrop(");
+            AppendJsQuoted(w, column.Field);
+            w.Write(", $event)\" data-field=\"");
+            AppendEncoded(w, column.Field);
+
+            if (column.IsPinned)
+            {
+                w.Write("\" data-pin=\"");
+                AppendEncoded(w, column.Field);
+                w.Write("\" style=\"left:0\" class=\"sticky z-30 relative border-r border-neutral-200 bg-neutral-50 dark:border-neutral-800 dark:bg-neutral-800/60 ");
+            }
+            else
+            {
+                w.Write("\" class=\"relative ");
+            }
+
+            w.Write("px-4 py-3 font-medium text-neutral-600 select-none dark:text-neutral-300 ");
             w.Write(TextAlignClass(column.Align));
             if (column.WidthCss is not null)
             {
@@ -453,12 +491,12 @@ public sealed class GridHtmlRenderer<TItem>
         w.Write("</div>");
     }
 
-    private void AppendRows(TextWriter w, PageResult<TItem> page)
+    private void AppendRows(TextWriter w, PageResult<TItem> page, IReadOnlyList<GridColumn<TItem>> columns)
     {
         if (page.Items.Count == 0)
         {
             w.Write("<tr><td colspan=\"");
-            w.Write((_visibleColumns.Count + (_options.EnableRowSelection ? 1 : 0)).ToString(CultureInfo.InvariantCulture));
+            w.Write((columns.Count + (_options.EnableRowSelection ? 1 : 0)).ToString(CultureInfo.InvariantCulture));
 
             if (_options.MinHeight.Length > 0)
             {
@@ -489,16 +527,29 @@ public sealed class GridHtmlRenderer<TItem>
 
             if (_options.EnableRowSelection && rowKey is not null)
             {
-                w.Write("<td class=\"w-10 px-4 py-2 align-middle\">");
+                w.Write("<td data-pin=\"__select\" style=\"left:0\" class=\"sticky left-0 z-10 w-10 border-r border-neutral-100 bg-white px-4 py-2 align-middle hover:bg-brand-50/40 dark:border-neutral-800/60 dark:bg-neutral-900 dark:hover:bg-white/[0.04]\">");
                 w.Write("<input type=\"checkbox\" class=\"h-4 w-4 accent-brand-600\" aria-label=\"Select row\" @change=\"toggleSelection($el.closest('tr').dataset.id)\" :checked=\"isSelected(");
                 AppendJsQuoted(w, rowKey);
                 w.Write(")\">");
                 w.Write("</td>");
             }
 
-            foreach (var column in _visibleColumns)
+            foreach (var column in columns)
             {
-                w.Write("<td class=\"whitespace-nowrap px-4 py-2.5 align-middle ");
+                w.Write("<td");
+
+                if (column.IsPinned)
+                {
+                    w.Write(" data-pin=\"");
+                    AppendEncoded(w, column.Field);
+                    w.Write("\" style=\"left:0\" class=\"sticky z-10 border-r border-neutral-100 bg-white hover:bg-brand-50/40 dark:border-neutral-800/60 dark:bg-neutral-900 dark:hover:bg-white/[0.04]");
+                }
+                else
+                {
+                    w.Write(" class=\"");
+                }
+
+                w.Write(" whitespace-nowrap px-4 py-2.5 align-middle ");
                 w.Write(TextAlignClass(column.Align));
                 w.Write("\">");
 

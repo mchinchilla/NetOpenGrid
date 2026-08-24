@@ -154,6 +154,49 @@ public class GridEndpointTests : IClassFixture<HostFactory>
     }
 
     [Fact]
+    public async Task Rows_RespectColsParam_Order()
+    {
+        var client = _factory.CreateClient();
+        var first = EmployeeData.All[0];
+
+        var response = await client.GetAsync($"/netgrid/employees/rows?sort=id&pageSize=1&cols={Uri.EscapeDataString("email,fullName")}");
+        response.EnsureSuccessStatusCode();
+        var html = await response.Content.ReadAsStringAsync();
+
+        Assert.Contains(first.Email, html);
+        Assert.Contains(first.FullName, html);
+        Assert.True(
+            html.IndexOf(first.Email, StringComparison.Ordinal) < html.IndexOf(first.FullName, StringComparison.Ordinal),
+            "email column should render before fullName when cols=email,fullName");
+    }
+
+    [Fact]
+    public async Task Rows_UnknownCols_FallBackToDefaultOrder()
+    {
+        var client = _factory.CreateClient();
+        var first = EmployeeData.All[0];
+
+        var response = await client.GetAsync($"/netgrid/employees/rows?sort=id&pageSize=1&cols={Uri.EscapeDataString("hacker,email")}");
+        response.EnsureSuccessStatusCode();
+        var html = await response.Content.ReadAsStringAsync();
+
+        // "hacker" is dropped; "email" is honored first, remaining columns appended in default order.
+        Assert.True(html.IndexOf(first.Email, StringComparison.Ordinal) < html.IndexOf(first.FullName, StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Shell_RendersPinnedColumnMarkup()
+    {
+        var client = _factory.CreateClient();
+        var html = await (await client.GetAsync("/netgrid/employees")).Content.ReadAsStringAsync();
+
+        Assert.Contains("data-pin=\"fullName\"", html);
+        Assert.Contains("data-pin=\"__select\"", html);
+        Assert.Contains("draggable=\"true\"", html);
+        Assert.Contains("sticky z-30", html);
+    }
+
+    [Fact]
     public async Task UnknownGridId_Returns404()
     {
         var client = _factory.CreateClient();

@@ -41,7 +41,7 @@ builder.Services.AddNetOpenGrid()
         .WithPageSizeChoices([10, 25, 50])
         .WithDebounce(300)
         .EnableRowSelection(e => e.Id.ToString("D"))
-        .AddColumn("fullName", e => e.FullName, c => c.Header("Full name").Searchable())
+        .AddColumn("fullName", e => e.FullName, c => c.Header("Full name").Searchable().Pinned())
         .AddColumn("email", e => e.Email)
         .AddColumn("department", e => e.Department, c => c.Header("Department"))
         .AddColumn("salary", e => e.Salary, c => c

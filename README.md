@@ -14,7 +14,7 @@ Sin virtual DOM. Sin reflexión en el hot path. Sin compilar expresiones por req
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind-v4-06B6D4?style=for-the-badge&logo=tailwindcss&logoColor=white)](https://tailwindcss.com)
 [![HTMX](https://img.shields.io/badge/HTMX-2-3D72D7?style=for-the-badge)](https://htmx.org)
 [![Alpine.js](https://img.shields.io/badge/Alpine.js-3-77C1CB?style=for-the-badge&logo=alpinedotjs&logoColor=white)](https://alpinejs.dev)
-[![Tests](https://img.shields.io/badge/tests-78%20passing-16A34A?style=for-the-badge&logo=xunit&logoColor=white)](#-testing)
+[![Tests](https://img.shields.io/badge/tests-82%20passing-16A34A?style=for-the-badge&logo=xunit&logoColor=white)](#-testing)
 [![License](https://img.shields.io/badge/License-MIT-F59E0B?style=for-the-badge)](LICENSE)
 
 </div>
@@ -277,6 +277,17 @@ Implementado en los tres motores: in-memory (agrupación en snapshot), JSON (`Js
 
 ---
 
+## 📌 Columnas fijadas y reordenables
+
+```csharp
+.AddColumn("sku", p => p.Sku, c => c.Header("SKU").Pinned())
+```
+
+- **Pinned**: `position: sticky` en `th`/`td` con offsets calculados por JS tras cada render/resize — la columna queda visible al hacer scroll horizontal (la columna de selección siempre se fija).
+- **Reordenables**: arrastra el `th` para reordenar. El orden se persiste en `localStorage` por grid y viaja al servidor como `cols=field1,field2,…`; el renderer valida contra la whitelist (campos desconocidos se ignoran, los no mencionados se agregan al final en su orden por defecto).
+
+---
+
 ## 📚 Referencia de configuración
 
 ### `GridOptionsBuilder<T>`
@@ -449,7 +460,7 @@ dotnet test
 
 - [x] `EFCoreGridDataSource<T>`: push-down de filtros/sort a SQL reutilizando las mismas estrategias
 - [x] Filtros tipo Excel con conteo por valor
-- [ ] Columnas fijadas (pin) y reordenables
+- [x] Columnas fijadas (pin) y reordenables
 - [ ] i18n de labels del cliente
 - [ ] Export server-side genérico (CSV/Excel) como parte del componente
 

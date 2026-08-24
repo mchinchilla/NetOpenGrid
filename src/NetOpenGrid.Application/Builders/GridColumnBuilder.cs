@@ -28,6 +28,7 @@ public sealed class GridColumnBuilder<TSource, TKey>
     private Func<TSource, string?, bool>? _searchMatcher;
     private Func<TSource, string?>? _rawCellHtml;
     private bool _visible = true;
+    private bool _pinned;
     private ColumnAlign _align = ColumnAlign.Start;
     private string? _widthCss;
     private ColumnDataType? _dataType;
@@ -150,6 +151,13 @@ public sealed class GridColumnBuilder<TSource, TKey>
         return this;
     }
 
+    /// <summary>Pins the column to the left edge (stays visible during horizontal scroll).</summary>
+    public GridColumnBuilder<TSource, TKey> Pinned(bool pinned = true)
+    {
+        _pinned = pinned;
+        return this;
+    }
+
     public GridColumnBuilder<TSource, TKey> Align(ColumnAlign align)
     {
         _align = align;
@@ -212,6 +220,7 @@ public sealed class GridColumnBuilder<TSource, TKey>
             IsSortable = sortStrategy is not null,
             IsSearchable = searchStrategy is not null,
             IsVisible = _visible,
+            IsPinned = _pinned,
             DataType = dataType,
             Align = _align,
             WidthCss = _widthCss

@@ -64,6 +64,7 @@
       }
     }
     if (state.q) params.set('q', state.q.slice(0, MAX_SEARCH));
+    if (state.columnOrder?.length) params.set('cols', state.columnOrder.join(','));
     return params;
   }
 
@@ -107,6 +108,8 @@
       listItems: {},
       listMeta: {},
       listSearch: '',
+      columnOrder: null,
+      dragField: null,
 
       get totalPages() {
         return Math.max(1, this.meta.pages);
@@ -166,6 +169,7 @@
 
         this.seedFromUrl();
         this.pageSizeLocked = false;
+        this.loadColumnOrder();
 
         document.body.addEventListener('htmx:afterRequest', (event) => {
           const config = event.detail?.requestConfig;
@@ -184,7 +188,63 @@
             this.page = this.meta.page;
             this.pageSize = this.meta.pageSize;
           }
+
+          requestAnimationFrame(() => this.applyPinnedOffsets());
         });
+
+        window.addEventListener('resize', () => this.applyPinnedOffsets());
+        requestAnimationFrame(() => this.applyPinnedOffsets());
+
+        if (this.columnOrder?.length) {
+          this.refresh();
+        }
+      },
+
+      loadColumnOrder() {
+        try {
+          const saved = localStorage.getItem(`netgrid:cols:${id}`);
+          if (saved) this.columnOrder = JSON.parse(saved);
+        } catch {
+          this.columnOrder = null;
+        }
+      },
+
+      applyPinnedOffsets() {
+        this.$el.querySelectorAll('[data-pin]').forEach((el) => {
+          el.style.left = `${el.offsetLeft}px`;
+        });
+      },
+
+      onColumnDragStart(field, event) {
+        this.dragField = field;
+        event.dataTransfer?.setData('text/plain', field);
+        event.dataTransfer && (event.dataTransfer.effectAllowed = 'move');
+      },
+
+      async onColumnDrop(field, event) {
+        const dragged = this.dragField || event.dataTransfer?.getData('text/plain');
+        this.dragField = null;
+        if (!dragged || dragged === field) return;
+
+        const order = Array.from(
+          this.$el.querySelectorAll('th[data-field]'),
+          (th) => th.dataset.field
+        );
+        const from = order.indexOf(dragged);
+        const to = order.indexOf(field);
+        if (from === -1 || to === -1) return;
+
+        order.splice(to, 0, order.splice(from, 1)[0]);
+        this.columnOrder = order;
+
+        try {
+          localStorage.setItem(`netgrid:cols:${id}`, JSON.stringify(order));
+        } catch {
+          /* storage unavailable; order stays session-only */
+        }
+
+        await this.refresh();
+      },
       },
 
       seedFromUrl() {

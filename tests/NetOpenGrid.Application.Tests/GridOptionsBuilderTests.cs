@@ -129,4 +129,17 @@ public class GridOptionsBuilderTests
         Assert.Null(name.SelectorExpression);
         Assert.NotNull(name.FilterValueParser);
     }
+
+    [Fact]
+    public void Pinned_FlagsColumn()
+    {
+        var options = new GridOptionsBuilder<Person>()
+            .WithId("people")
+            .AddColumn(p => p.Name, c => c.Pinned())
+            .AddColumn(p => p.City)
+            .Build();
+
+        Assert.True(options.Columns.Single(c => c.Field == "name").IsPinned);
+        Assert.False(options.Columns.Single(c => c.Field == "city").IsPinned);
+    }
 }

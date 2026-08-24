@@ -40,7 +40,7 @@ builder.Services.AddNetOpenGrid()
         .WithNavLinks(
             new GridNavLink("Products", "/netgrid/products"),
             new GridNavLink("Currencies", "/netgrid/currencies"))
-        .AddColumn("sku", p => p.Sku, c => c.Header("SKU"))
+        .AddColumn("sku", p => p.Sku, c => c.Header("SKU").Pinned())
         .AddColumn("name", p => p.Name, c => c.Searchable())
         .AddColumn("category", p => p.Category, c => c.Header("Category"))
         .AddColumn("price", p => p.Price, c => c

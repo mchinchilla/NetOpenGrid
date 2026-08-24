@@ -3,6 +3,7 @@ using System.Text.Json;
 using NetOpenGrid.Application.Binding;
 using NetOpenGrid.Application.Engine;
 using NetOpenGrid.Application.Options;
+using NetOpenGrid.Domain.Columns;
 using NetOpenGrid.Domain.Abstractions;
 
 namespace NetOpenGrid.Infrastructure.Runtime;
@@ -35,7 +36,7 @@ public sealed class GridRuntime<TItem> : IGridRuntime
     {
         var normalization = GridRequestParser.Parse(values, _options);
         var result = await new GridQueryEngine<TItem>(_dataSource).ExecuteAsync(normalization.Query, cancellationToken);
-        var html = await _renderer.RenderRowsAsync(result, cancellationToken);
+        var html = await _renderer.RenderRowsAsync(result, ResolveColumnOrder(values), cancellationToken);
 
         return new GridRowsResponse(
             html,
@@ -43,6 +44,40 @@ public sealed class GridRuntime<TItem> : IGridRuntime
             result.Page.Page,
             result.Page.PageSize,
             Math.Max(result.Page.TotalPages, 1));
+    }
+
+    /// <summary>
+    /// Client-driven column order ("cols=field1,field2"). Unknown, hidden or duplicate
+    /// fields are ignored; visible columns missing from the list keep their default order at the end.
+    /// </summary>
+    private IReadOnlyList<GridColumn<TItem>>? ResolveColumnOrder(GridRequestValues values)
+    {
+        var raw = values.Get("cols");
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return null;
+        }
+
+        var ordered = new List<GridColumn<TItem>>();
+        foreach (var field in raw.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries))
+        {
+            if (_options.TryGetColumn(field, out var column) &&
+                column.IsVisible &&
+                !ordered.Contains(column))
+            {
+                ordered.Add(column);
+            }
+        }
+
+        foreach (var column in _options.Columns)
+        {
+            if (column.IsVisible && !ordered.Contains(column))
+            {
+                ordered.Add(column);
+            }
+        }
+
+        return ordered;
     }
 
     /// <summary>Excel-style distinct value counts for one column, under the current query context.</summary>

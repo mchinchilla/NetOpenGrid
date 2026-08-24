@@ -35,6 +35,9 @@ public sealed class GridColumn<T>
     /// <summary>Grouped key (boxed) → raw display string; EF value-count lists.</summary>
     public Func<object?, string?>? KeyFormatter { get; init; }
 
+    /// <summary>Pinned columns stay visible during horizontal scroll (CSS sticky, left edge).</summary>
+    public bool IsPinned { get; init; }
+
     public ISortStrategy<T>? SortStrategy { get; init; }
     public IFilterStrategyFactory<T>? FilterFactory { get; init; }
     public ISearchStrategy<T>? SearchStrategy { get; init; }

@@ -14,7 +14,7 @@ No virtual DOM. No reflection on the hot path. No per-request expression compila
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind-v4-06B6D4?style=for-the-badge&logo=tailwindcss&logoColor=white)](https://tailwindcss.com)
 [![HTMX](https://img.shields.io/badge/HTMX-2-3D72D7?style=for-the-badge)](https://htmx.org)
 [![Alpine.js](https://img.shields.io/badge/Alpine.js-3-77C1CB?style=for-the-badge&logo=alpinedotjs&logoColor=white)](https://alpinejs.dev)
-[![Tests](https://img.shields.io/badge/tests-78%20passing-16A34A?style=for-the-badge&logo=xunit&logoColor=white)](#-testing)
+[![Tests](https://img.shields.io/badge/tests-82%20passing-16A34A?style=for-the-badge&logo=xunit&logoColor=white)](#-testing)
 [![License](https://img.shields.io/badge/License-MIT-F59E0B?style=for-the-badge)](LICENSE)
 
 </div>
@@ -277,6 +277,17 @@ Implemented across all three engines: in-memory (snapshot grouping), JSON (`Json
 
 ---
 
+## 📌 Pinned & reorderable columns
+
+```csharp
+.AddColumn("sku", p => p.Sku, c => c.Header("SKU").Pinned())
+```
+
+- **Pinned**: `position: sticky` on `th`/`td` with offsets computed by JS after every render/resize — the column stays visible during horizontal scroll (the selection column is always pinned).
+- **Reorderable**: drag a `th` to reorder. Order persists in `localStorage` per grid and travels to the server as `cols=field1,field2,…`; the renderer validates against the whitelist (unknown fields are ignored, unlisted ones are appended in default order).
+
+---
+
 ## 📚 Configuration reference
 
 ### `GridOptionsBuilder<T>`
@@ -450,7 +461,7 @@ dotnet test
 
 - [x] `EFCoreGridDataSource<T>`: filter/sort push-down to SQL reusing the same strategies
 - [x] Excel-style filters with per-value counts
-- [ ] Pinned and reorderable columns
+- [x] Pinned and reorderable columns
 - [ ] Client label i18n
 - [ ] Generic server-side export (CSV/Excel) as part of the component
 
