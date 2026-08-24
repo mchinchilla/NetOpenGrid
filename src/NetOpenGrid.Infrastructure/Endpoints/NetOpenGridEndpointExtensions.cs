@@ -46,6 +46,20 @@ public static class NetOpenGridEndpointExtensions
             return Results.Text(response.Html, "text/html; charset=utf-8");
         });
 
+        endpoints.MapGet($"{prefix}/{{gridId}}/values", async (string gridId, HttpContext http, CancellationToken cancellationToken) =>
+        {
+            if (http.RequestServices.GetKeyedService<IGridRuntime>(gridId) is not { } runtime)
+            {
+                return Results.NotFound($"Unknown grid '{gridId}'.");
+            }
+
+            var field = http.Request.Query["field"].ToString();
+            var json = await runtime.RenderValuesAsync(field, http.Request.ToGridRequestValues(), cancellationToken);
+            http.Response.Headers.CacheControl = "no-store";
+
+            return Results.Content(json, "application/json; charset=utf-8");
+        });
+
         endpoints.MapGet($"{prefix}/{{gridId}}", async (string gridId, HttpContext http, CancellationToken cancellationToken) =>
         {
             if (http.RequestServices.GetKeyedService<IGridRuntime>(gridId) is not { } runtime)

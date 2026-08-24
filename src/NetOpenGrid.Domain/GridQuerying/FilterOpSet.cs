@@ -15,10 +15,11 @@ public enum FilterOpSet : ushort
     LessThanOrEqual = 1 << 8,
     IsEmpty = 1 << 9,
     IsNotEmpty = 1 << 10,
+    In = 1 << 11,
 
-    Text = Equals | NotEquals | Contains | StartsWith | EndsWith | IsEmpty | IsNotEmpty,
-    Numeric = Equals | NotEquals | GreaterThan | GreaterThanOrEqual | LessThan | LessThanOrEqual,
-    EqualityOnly = Equals | NotEquals | IsEmpty | IsNotEmpty,
+    Text = Equals | NotEquals | Contains | StartsWith | EndsWith | IsEmpty | IsNotEmpty | In,
+    Numeric = Equals | NotEquals | GreaterThan | GreaterThanOrEqual | LessThan | LessThanOrEqual | In,
+    EqualityOnly = Equals | NotEquals | IsEmpty | IsNotEmpty | In,
     All = Text | Numeric
 }
 
@@ -35,6 +36,7 @@ public static class FilterOperatorMapper
     private const string LessThanOrEqualToken = "lte";
     private const string IsEmptyToken = "is-empty";
     private const string IsNotEmptyToken = "is-not-empty";
+    private const string InToken = "in";
 
     public static bool TryParse(string? raw, out FilterOperator op)
     {
@@ -51,6 +53,7 @@ public static class FilterOperatorMapper
             case LessThanOrEqualToken or "<=": op = FilterOperator.LessThanOrEqual; return true;
             case IsEmptyToken: op = FilterOperator.IsEmpty; return true;
             case IsNotEmptyToken: op = FilterOperator.IsNotEmpty; return true;
+            case InToken: op = FilterOperator.In; return true;
             default: op = default; return false;
         }
     }
@@ -97,6 +100,7 @@ public static class FilterOperatorMapper
         FilterOperator.LessThanOrEqual => LessThanOrEqualToken,
         FilterOperator.IsEmpty => IsEmptyToken,
         FilterOperator.IsNotEmpty => IsNotEmptyToken,
+        FilterOperator.In => InToken,
         _ => throw new ArgumentOutOfRangeException(nameof(op), op, null)
     };
 
@@ -113,6 +117,7 @@ public static class FilterOperatorMapper
         FilterOperator.LessThanOrEqual => FilterOpSet.LessThanOrEqual,
         FilterOperator.IsEmpty => FilterOpSet.IsEmpty,
         FilterOperator.IsNotEmpty => FilterOpSet.IsNotEmpty,
+        FilterOperator.In => FilterOpSet.In,
         _ => FilterOpSet.None
     };
 

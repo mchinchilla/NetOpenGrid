@@ -21,6 +21,9 @@ public sealed class GridOptions<T>
     /// when few rows match; default ≈ 25 rows. Empty string disables it.</summary>
     public string MinHeight { get; init; } = "64rem";
 
+    /// <summary>Max distinct values returned by Excel-style value-count lists.</summary>
+    public int FilterValuesLimit { get; init; } = 200;
+
     public string EmptyMessage { get; init; } = "No records found.";
     public bool EnableRowSelection { get; init; }
     public Func<T, string?>? RowKey { get; init; }

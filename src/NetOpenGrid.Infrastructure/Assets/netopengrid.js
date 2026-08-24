@@ -21,7 +21,34 @@
 
   const isEmptyOp = (op) => op === 'is-empty' || op === 'is-not-empty';
 
-  function toParams(state) {
+  const splitFilterTokens = (raw) => {
+    if (!raw.includes('[')) return raw.split(',');
+    const tokens = [];
+    let depth = 0;
+    let start = 0;
+    for (let i = 0; i < raw.length; i++) {
+      const c = raw[i];
+      if (c === '[') depth++;
+      else if (c === ']') depth--;
+      else if (c === ',' && depth === 0) {
+        tokens.push(raw.slice(start, i).trim());
+        start = i + 1;
+      }
+    }
+    tokens.push(raw.slice(start).trim());
+    return tokens.filter((t) => t.length > 0);
+  };
+
+  const parseInValues = (json) => {
+    try {
+      const parsed = JSON.parse(json);
+      return Array.isArray(parsed) ? parsed.map(String) : [];
+    } catch {
+      return [];
+    }
+  };
+
+  function toParams(state, excludeField) {
     const params = new URLSearchParams();
     if (state.page > 1) params.set('page', String(state.page));
     if (!state.pageSizeLocked) params.set('pageSize', String(state.pageSize));
@@ -29,7 +56,7 @@
       params.append('sort', `${sort.field}:${sort.dir}`);
     }
     for (const [field, filter] of Object.entries(state.filters)) {
-      if (!filter) continue;
+      if (!filter || field === excludeField) continue;
       if (isEmptyOp(filter.op)) {
         params.append('filter', `${field}:${filter.op}`);
       } else {
@@ -77,6 +104,9 @@
       editingOp: 'equals',
       editingValue: '',
       popoverFlip: {},
+      listItems: {},
+      listMeta: {},
+      listSearch: '',
 
       get totalPages() {
         return Math.max(1, this.meta.pages);
@@ -94,8 +124,18 @@
           .filter(([, f]) => f)
           .map(([field, f]) => ({
             field,
-            label: `${this.columnHeader(field)} ${OP_LABELS[f.op] || f.op}${isEmptyOp(f.op) ? '' : ` ${f.value}`}`
+            label: `${this.columnHeader(field)} ${this.filterLabel(f)}`
           }));
+      },
+
+      filterLabel(f) {
+        if (f.op === 'in') {
+          const values = parseInValues(f.value);
+          const shown = values.slice(0, 2).join(', ');
+          return values.length > 2 ? `any of ${shown} +${values.length - 2}` : `any of ${shown}`;
+        }
+
+        return `${OP_LABELS[f.op] || f.op}${isEmptyOp(f.op) ? '' : ` ${f.value}`}`;
       },
 
       get allPageSelected() {
@@ -108,9 +148,12 @@
       },
 
       columnHeader(field) {
+        return this.columnInfo(field)?.header || field;
+      },
+
+      columnInfo(field) {
         const columns = window.__NETGRID__?.columns?.[id] || [];
-        const column = columns.find((c) => c.field === field);
-        return column ? column.header : field;
+        return columns.find((c) => c.field === field);
       },
 
       init() {
@@ -163,12 +206,14 @@
           })
           .filter((sort) => sort.field);
 
-        for (const raw of params.getAll('filter').flatMap((value) => value.split(','))) {
-          const parts = raw.split(':');
-          if (parts.length < 2) continue;
-          const [field, op] = parts;
-          const value = parts.length >= 3 ? parts.slice(2).join(':') : '';
-          this.filters[field] = { op, value };
+        for (const raw of params.getAll('filter')) {
+          for (const rawToken of splitFilterTokens(raw)) {
+            const parts = rawToken.split(':');
+            if (parts.length < 2) continue;
+            const [field, op] = parts;
+            const value = parts.length >= 3 ? parts.slice(2).join(':') : '';
+            this.filters[field] = { op, value };
+          }
         }
 
         const q = params.get('q');
@@ -223,11 +268,74 @@
         this.editingOp = existing?.op || 'equals';
         this.editingValue = existing?.value || '';
         this.popoverFlip = {};
+        this.listSearch = '';
 
         const anchor = event?.currentTarget;
+
+        if (this.columnInfo(field)?.mode === 'list') {
+          this.listItems[field] = null;
+          this.loadListValues(field);
+        }
+
         if (anchor) {
           requestAnimationFrame(() => this.positionPopover(field, anchor));
         }
+      },
+
+      async loadListValues(field) {
+        const params = toParams(this, field);
+        const query = params.toString();
+        try {
+          const response = await fetch(`/netgrid/${this.id}/values?field=${encodeURIComponent(field)}${query ? '&' + query : ''}`);
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          const data = await response.json();
+
+          if (this.editing !== field) return;
+
+          const selected = new Set(
+            this.filters[field]?.op === 'in' ? parseInValues(this.filters[field].value) : []
+          );
+
+          this.listItems[field] = (data.values || []).map((entry) => ({
+            value: entry.value,
+            count: entry.count,
+            checked: selected.has(entry.value)
+          }));
+          this.listMeta[field] = { totalDistinct: data.totalDistinct || 0 };
+        } catch (error) {
+          console.error('[netgrid] value list failed:', error);
+          this.listItems[field] = [];
+        }
+      },
+
+      visibleListItems(field) {
+        const items = this.listItems[field] || [];
+        const needle = this.listSearch.trim().toLowerCase();
+        return needle
+          ? items.filter((item) => item.value.toLowerCase().includes(needle))
+          : items;
+      },
+
+      listAllSelected(field) {
+        const visible = this.visibleListItems(field);
+        return visible.length > 0 && visible.every((item) => item.checked);
+      },
+
+      toggleListAll(field, checked) {
+        for (const item of this.visibleListItems(field)) {
+          item.checked = checked;
+        }
+      },
+
+      listTruncated(field) {
+        const meta = this.listMeta[field];
+        return Boolean(meta && (this.listItems[field] || []).length < meta.totalDistinct);
+      },
+
+      listTruncatedLabel(field) {
+        const meta = this.listMeta[field];
+        if (!meta) return '';
+        return `Showing ${this.listItems[field]?.length ?? 0} of ${meta.totalDistinct} values`;
       },
 
       popoverClass(field) {
@@ -266,6 +374,24 @@
       async applyFilter() {
         if (this.editing === null) return;
         const field = this.editing;
+
+        if (this.columnInfo(field)?.mode === 'list') {
+          const selected = (this.listItems[field] || [])
+            .filter((item) => item.checked)
+            .map((item) => item.value);
+
+          if (selected.length > 0) {
+            this.filters[field] = { op: 'in', value: JSON.stringify(selected) };
+          } else {
+            delete this.filters[field];
+          }
+
+          this.editing = null;
+          this.page = 1;
+          await this.refresh();
+          return;
+        }
+
         const value = this.editingValue.trim();
 
         if (isEmptyOp(this.editingOp) || value !== '') {

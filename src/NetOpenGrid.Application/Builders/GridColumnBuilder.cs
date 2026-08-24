@@ -206,6 +206,8 @@ public sealed class GridColumnBuilder<TSource, TKey>
             SearchStrategy = searchStrategy,
             SelectorExpression = _selectorExpression,
             FilterValueParser = BuildFilterValueParser(),
+            RawKeyFormat = BuildRawKeyFormat(),
+            KeyFormatter = BuildKeyFormatter(),
             AllowedOps = allowedOps,
             IsSortable = sortStrategy is not null,
             IsSearchable = searchStrategy is not null,
@@ -275,6 +277,21 @@ public sealed class GridColumnBuilder<TSource, TKey>
             return ok;
         };
 
+    /// <summary>Raw, parseable-back key display (ignores custom cell formatting on purpose).</summary>
+    private Func<TSource, string?> BuildRawKeyFormat()
+    {
+        var selector = _selector;
+        return item => DefaultValueFormatter<TKey>.Format(selector(item));
+    }
+
+    private Func<object?, string?>? BuildKeyFormatter()
+    {
+        var formatter = _formatter;
+        return formatter is not null
+            ? boxed => boxed is TKey key ? formatter(key) : null
+            : static boxed => boxed is TKey key ? DefaultValueFormatter<TKey>.Format(key) : null;
+    }
+
     private Func<TSource, string?> ResolveFormatter()
     {
         var formatter = _formatter;
@@ -317,7 +334,7 @@ public sealed class GridColumnBuilder<TSource, TKey>
 
         if (typeof(TKey) == typeof(bool))
         {
-            var boolOps = requested & (FilterOpSet.Equals | FilterOpSet.NotEquals);
+            var boolOps = requested & (FilterOpSet.Equals | FilterOpSet.NotEquals | FilterOpSet.In);
             if (boolOps == FilterOpSet.None)
             {
                 return (null, FilterOpSet.None);
@@ -347,7 +364,7 @@ public sealed class GridColumnBuilder<TSource, TKey>
             return (null, FilterOpSet.None);
         }
 
-        var ops = requested & (FilterOpSet.Equals | FilterOpSet.NotEquals);
+        var ops = requested & (FilterOpSet.Equals | FilterOpSet.NotEquals | FilterOpSet.In);
         return ops == FilterOpSet.None
             ? (null, FilterOpSet.None)
             : (new ParsableFilterStrategy<TSource, TKey>(_selector, parser), ops);

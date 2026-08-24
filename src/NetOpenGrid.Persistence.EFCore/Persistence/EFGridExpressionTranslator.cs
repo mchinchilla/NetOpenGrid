@@ -1,5 +1,6 @@
 using System.Linq.Expressions;
 using System.Reflection;
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using NetOpenGrid.Domain.Columns;
 using NetOpenGrid.Domain.GridQuerying;
@@ -58,6 +59,11 @@ internal static class EFGridExpressionTranslator
             }
         }
 
+        if (op == FilterOperator.In)
+        {
+            return CreateIn<T>(column, body, parameter, raw);
+        }
+
         if (column.FilterValueParser is null)
         {
             return null;
@@ -81,6 +87,52 @@ internal static class EFGridExpressionTranslator
         };
 
         return comparison is null ? null : BuildLambda<T>(comparison, parameter);
+    }
+
+    private static Expression<Func<T, bool>>? CreateIn<T>(
+        GridColumn<T> column,
+        Expression body,
+        ParameterExpression parameter,
+        string json)
+    {
+        List<string> literals;
+        try
+        {
+            literals = JsonSerializer.Deserialize<List<string>>(json) ?? [];
+        }
+        catch (JsonException)
+        {
+            literals = [];
+        }
+
+        if (literals.Count == 0)
+        {
+            return BuildLambda<T>(Expression.Constant(false), parameter);
+        }
+
+        Expression? orChain = null;
+
+        foreach (var literal in literals)
+        {
+            Expression? match = body.Type == typeof(string)
+                ? BuildLike(body, EscapeLike(literal))
+                : column.FilterValueParser is not null &&
+                  column.FilterValueParser(literal, out var parsed) &&
+                  parsed is not null
+                    ? Expression.Equal(body, Expression.Constant(parsed, body.Type))
+                    : null;
+
+            if (match is null)
+            {
+                continue;
+            }
+
+            orChain = orChain is null ? match : Expression.OrElse(orChain, match);
+        }
+
+        return orChain is null
+            ? BuildLambda<T>(Expression.Constant(false), parameter)
+            : BuildLambda<T>(orChain, parameter);
     }
 
     public static Expression<Func<T, bool>>? CreateSearch<T>(IReadOnlyList<GridColumn<T>> columns, string term)

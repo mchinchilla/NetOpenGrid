@@ -84,12 +84,17 @@ internal static class InMemoryGridPipeline
         return new PageResult<T>(items, totalCount, paging.Page, paging.PageSize);
     }
 
-    private static List<Func<T, bool>> BuildPredicates<T>(GridQuery query, GridOptions<T> options)
+    internal static List<Func<T, bool>> BuildPredicates<T>(GridQuery query, GridOptions<T> options, string? excludeField = null)
     {
         var predicates = new List<Func<T, bool>>();
 
         foreach (var filter in query.Filters)
         {
+            if (excludeField is not null && string.Equals(filter.Field, excludeField, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
             if (!options.TryGetColumn(filter.Field, out var column) ||
                 column.FilterFactory is not { } factory)
             {

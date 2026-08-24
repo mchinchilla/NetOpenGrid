@@ -14,7 +14,7 @@ No virtual DOM. No reflection on the hot path. No per-request expression compila
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind-v4-06B6D4?style=for-the-badge&logo=tailwindcss&logoColor=white)](https://tailwindcss.com)
 [![HTMX](https://img.shields.io/badge/HTMX-2-3D72D7?style=for-the-badge)](https://htmx.org)
 [![Alpine.js](https://img.shields.io/badge/Alpine.js-3-77C1CB?style=for-the-badge&logo=alpinedotjs&logoColor=white)](https://alpinejs.dev)
-[![Tests](https://img.shields.io/badge/tests-67%20passing-16A34A?style=for-the-badge&logo=xunit&logoColor=white)](#-testing)
+[![Tests](https://img.shields.io/badge/tests-78%20passing-16A34A?style=for-the-badge&logo=xunit&logoColor=white)](#-testing)
 [![License](https://img.shields.io/badge/License-MIT-F59E0B?style=for-the-badge)](LICENSE)
 
 </div>
@@ -254,6 +254,29 @@ Important rules:
 
 ---
 
+## 📋 Excel-style filters (per-value counts)
+
+Text, enum and boolean columns show a **checklist of distinct values with counts** in the popover:
+
+- Counts respect the current context (search + other filters) and **ignore the column's own filter** — classic Excel semantics.
+- In-list search, *Select all* and a truncation notice (`FilterValuesLimit`, default 200).
+- Applying generates an `in` filter:
+
+```
+filter=category:in:["Books","Toys"]
+```
+
+- Values endpoint (used by the popover, handy for your own UI too):
+
+```
+GET /netgrid/:id/values?field=category&<context>
+→ {"field":"category","totalDistinct":5,"limit":200,"values":[{"value":"Books","count":28},…]}
+```
+
+Implemented across all three engines: in-memory (snapshot grouping), JSON (`JsonElement`) and EF Core (`GROUP BY` translated to SQL). Numeric/date columns keep the operator popover.
+
+---
+
 ## 📚 Configuration reference
 
 ### `GridOptionsBuilder<T>`
@@ -426,7 +449,7 @@ dotnet test
 ## 🗺️ Roadmap
 
 - [x] `EFCoreGridDataSource<T>`: filter/sort push-down to SQL reusing the same strategies
-- [ ] Excel-style filters with per-value counts
+- [x] Excel-style filters with per-value counts
 - [ ] Pinned and reorderable columns
 - [ ] Client label i18n
 - [ ] Generic server-side export (CSV/Excel) as part of the component

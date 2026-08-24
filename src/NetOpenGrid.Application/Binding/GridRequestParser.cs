@@ -1,3 +1,4 @@
+using System.Text.Json;
 using NetOpenGrid.Application.Options;
 using NetOpenGrid.Domain.GridQuerying;
 
@@ -105,7 +106,7 @@ public static class GridRequestParser
 
         foreach (var raw in rawValues)
         {
-            foreach (var token in raw.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries))
+            foreach (var token in SplitFilterTokens(raw))
             {
                 var parts = token.Split(':', 3);
                 if (parts.Length is not (2 or 3))
@@ -149,11 +150,64 @@ public static class GridRequestParser
                     continue;
                 }
 
+                if (op == FilterOperator.In && !IsValidInPayload(value))
+                {
+                    warnings.Add($"Ignored filter '{token}': 'in' requires a non-empty JSON string array.");
+                    continue;
+                }
+
                 filters.Add(new FilterDescriptor(column.Field, op, isEmptyOp ? null : value));
             }
         }
 
         return filters;
+    }
+
+    private static bool IsValidInPayload(string value)
+    {
+        try
+        {
+            return JsonSerializer.Deserialize<List<string>>(value) is { Count: > 0 };
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Comma-splits filter tokens, but commas inside [ ... ] (the In operator's JSON payload) stay intact.
+    /// </summary>
+    private static IEnumerable<string> SplitFilterTokens(string raw)
+    {
+        if (!raw.Contains('['))
+        {
+            return raw.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+        }
+
+        var tokens = new List<string>();
+        var depth = 0;
+        var start = 0;
+
+        for (var i = 0; i < raw.Length; i++)
+        {
+            switch (raw[i])
+            {
+                case '[':
+                    depth++;
+                    break;
+                case ']':
+                    depth--;
+                    break;
+                case ',' when depth == 0:
+                    tokens.Add(raw[start..i].Trim());
+                    start = i + 1;
+                    break;
+            }
+        }
+
+        tokens.Add(raw[start..].Trim());
+        return tokens.Where(static t => t.Length > 0);
     }
 
     private static string? ParseSearch(string? raw, List<string> warnings)

@@ -11,5 +11,7 @@ public interface IGridRuntime
 
     ValueTask<GridRowsResponse> RenderRowsAsync(GridRequestValues values, CancellationToken cancellationToken = default);
 
+    ValueTask<string> RenderValuesAsync(string field, GridRequestValues values, CancellationToken cancellationToken = default);
+
     ValueTask<string> RenderShellAsync(GridRequestValues values, CancellationToken cancellationToken = default);
 }

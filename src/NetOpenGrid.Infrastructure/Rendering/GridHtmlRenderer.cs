@@ -332,6 +332,7 @@ public sealed class GridHtmlRenderer<TItem>
     }
 
     /// <summary>Excel-like filter popover anchored to its own column header, opening inward.</summary>
+    /// <summary>Excel-style filter popover anchored to its own column header, opening inward.</summary>
     private void AppendFilterPopover(TextWriter w, GridColumn<TItem> column, bool isFirstFilterable)
     {
         w.Write("<div x-show=\"editing === ");
@@ -342,10 +343,69 @@ public sealed class GridHtmlRenderer<TItem>
         AppendJsQuoted(w, column.Field);
         w.Write(")\" class=\"absolute z-30 w-64 space-y-3 rounded-xl border border-neutral-200 bg-white p-3 text-left shadow-xl dark:border-neutral-700 dark:bg-neutral-900\">");
         w.Write("<div class=\"text-xs font-semibold tracking-wide text-neutral-500 uppercase\" x-text=\"editingLabel\"></div>");
+
+        if (IsListMode(column))
+        {
+            AppendValueListBody(w, column);
+        }
+        else
+        {
+            AppendOperatorBody(w, column);
+        }
+
+        w.Write("<div class=\"flex justify-end gap-2 pt-1\">");
+        w.Write("<button type=\"button\" class=\"btn-ghost-sm\" @click=\"clearFilter(editing); cancelEditing()\">Clear</button>");
+        w.Write("<button type=\"button\" class=\"btn-primary-sm\" @click=\"applyFilter()\">Apply</button>");
+        w.Write("</div></div>");
+    }
+
+    private static bool IsListMode(GridColumn<TItem> column) =>
+        column.DataType is ColumnDataType.Text or ColumnDataType.Enum or ColumnDataType.Boolean;
+
+    private void AppendValueListBody(TextWriter w, GridColumn<TItem> column)
+    {
+        w.Write("<input type=\"search\" x-model=\"listSearch\" placeholder=\"Filter values...\" class=\"input-base\">");
+
+        w.Write("<label class=\"flex cursor-pointer items-center gap-2 text-sm font-medium\">");
+        w.Write("<input type=\"checkbox\" class=\"h-4 w-4 accent-brand-600\" :checked=\"listAllSelected(");
+        AppendJsQuoted(w, column.Field);
+        w.Write(")\" @change=\"toggleListAll(");
+        AppendJsQuoted(w, column.Field);
+        w.Write(", $event.target.checked)\">");
+        w.Write("<span>Select all</span>");
+        w.Write("</label>");
+
+        w.Write("<div class=\"max-h-56 space-y-1 overflow-y-auto pr-1\">");
+        w.Write("<div x-show=\"!listItems[");
+        AppendJsQuoted(w, column.Field);
+        w.Write("]\" class=\"text-sm text-neutral-400\">Loading...</div>");
+        w.Write("<template x-for=\"item in visibleListItems(");
+        AppendJsQuoted(w, column.Field);
+        w.Write(")\" :key=\"item.value\">");
+        w.Write("<label class=\"flex cursor-pointer items-center gap-2 py-0.5 text-sm\">");
+        w.Write("<input type=\"checkbox\" class=\"h-4 w-4 accent-brand-600\" :checked=\"item.checked\" @change=\"item.checked = !item.checked\">");
+        w.Write("<span class=\"flex-1 truncate\" x-text=\"item.value\"></span>");
+        w.Write("<span class=\"text-xs tabular-nums text-neutral-400\" x-text=\"item.count\"></span>");
+        w.Write("</label></template>");
+        w.Write("<div x-show=\"listTruncated(");
+        AppendJsQuoted(w, column.Field);
+        w.Write(")\" class=\"text-xs text-neutral-400\" x-text=\"listTruncatedLabel(");
+        AppendJsQuoted(w, column.Field);
+        w.Write(")\"></div>");
+        w.Write("</div>");
+    }
+
+    private void AppendOperatorBody(TextWriter w, GridColumn<TItem> column)
+    {
         w.Write("<select x-model=\"editingOp\" class=\"input-base\">");
 
         foreach (var op in FilterOperatorMapper.ToOperators(column.AllowedOps))
         {
+            if (op == FilterOperator.In)
+            {
+                continue;
+            }
+
             w.Write("<option value=\"");
             AppendEncoded(w, FilterOperatorMapper.ToToken(op));
             w.Write("\">");
@@ -355,10 +415,6 @@ public sealed class GridHtmlRenderer<TItem>
 
         w.Write("</select>");
         w.Write("<input type=\"text\" x-show=\"!isEmptyOp(editingOp)\" x-model=\"editingValue\" @keydown.enter.prevent=\"applyFilter()\" placeholder=\"Value\" class=\"input-base\">");
-        w.Write("<div class=\"flex justify-end gap-2 pt-1\">");
-        w.Write("<button type=\"button\" class=\"btn-ghost-sm\" @click=\"clearFilter(editing); cancelEditing()\">Clear</button>");
-        w.Write("<button type=\"button\" class=\"btn-primary-sm\" @click=\"applyFilter()\">Apply</button>");
-        w.Write("</div></div>");
     }
 
     private void AppendPager(TextWriter w)
@@ -497,6 +553,8 @@ public sealed class GridHtmlRenderer<TItem>
             AppendJsonString(w, _visibleColumns[i].Header);
             w.Write(",\"flipX\":\"");
             w.Write(IsFirstFilterable(_visibleColumns[i]) ? "left" : "right");
+            w.Write("\",\"mode\":\"");
+            w.Write(_visibleColumns[i].IsFilterable && IsListMode(_visibleColumns[i]) ? "list" : "op");
             w.Write("\"}");
         }
 

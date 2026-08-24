@@ -99,6 +99,39 @@ public class GridRequestParserTests
         Assert.Equal(200, normalization.Query.Search!.Length);
     }
 
+    [Fact]
+    public void ParsesJsonArray_InFilter()
+    {
+        var normalization = GridRequestParser.Parse(
+            Values(("filter", ["""city:in:["Lima","Bogota"]"""])),
+            TestGrid.Options());
+
+        var filter = Assert.Single(normalization.Query.Filters);
+        Assert.Equal(FilterOperator.In, filter.Operator);
+        Assert.Equal("""["Lima","Bogota"]""", filter.Value);
+        Assert.Empty(normalization.Warnings);
+    }
+
+    [Fact]
+    public void JsonArrayFilter_IsNotCommaSplit()
+    {
+        var options = TestGrid.Options();
+
+        var good = GridRequestParser.Parse(
+            Values(("filter", ["""name:in:["Ana Torres, jr","B"]"""])),
+            options);
+
+        Assert.Single(good.Query.Filters);
+        Assert.Empty(good.Warnings);
+
+        var malformed = GridRequestParser.Parse(
+            Values(("filter", ["""city:in:not-json"""])),
+            options);
+
+        Assert.Empty(malformed.Query.Filters);
+        Assert.NotEmpty(malformed.Warnings);
+    }
+
     private static GridRequestValues Values(params (string Key, string[] Values)[] entries) =>
         new(entries.Select(e => new KeyValuePair<string, IReadOnlyList<string>>(e.Key, e.Values)));
 }

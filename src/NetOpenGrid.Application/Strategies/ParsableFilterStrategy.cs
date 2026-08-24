@@ -30,7 +30,7 @@ internal sealed class ParsableFilterStrategy<TSource, TKey>(
     {
         get
         {
-            var ops = FilterOpSet.Numeric;
+            var ops = FilterOpSet.Numeric | FilterOpSet.In;
             if (SupportsEmptyValues)
             {
                 ops |= FilterOpSet.IsEmpty | FilterOpSet.IsNotEmpty;
@@ -53,6 +53,8 @@ internal sealed class ParsableFilterStrategy<TSource, TKey>(
                 return SupportsEmptyValues ? new Lambda(item => selector(item) is null) : null;
             case FilterOperator.IsNotEmpty:
                 return SupportsEmptyValues ? new Lambda(item => selector(item) is not null) : null;
+            case FilterOperator.In:
+                return CreateIn(rawValue ?? string.Empty);
         }
 
         if (!parser(rawValue ?? string.Empty, out var target))
@@ -70,6 +72,35 @@ internal sealed class ParsableFilterStrategy<TSource, TKey>(
             FilterOperator.LessThanOrEqual => new Lambda(item => CompareKey(item, target) <= 0),
             _ => null
         };
+    }
+
+    private IFilterStrategy<TSource>? CreateIn(string json)
+    {
+        List<string> literals;
+        try
+        {
+            literals = System.Text.Json.JsonSerializer.Deserialize<List<string>>(json) ?? [];
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            literals = [];
+        }
+
+        var targets = new HashSet<TKey>();
+        foreach (var literal in literals)
+        {
+            if (parser(literal, out var parsed))
+            {
+                targets.Add(parsed);
+            }
+        }
+
+        if (targets.Count == 0)
+        {
+            return NeverMatch<TSource>.Instance;
+        }
+
+        return new Lambda(item => selector(item) is { } key && targets.Contains(key));
     }
 
     /// <summary>Null keys sort below every value.</summary>

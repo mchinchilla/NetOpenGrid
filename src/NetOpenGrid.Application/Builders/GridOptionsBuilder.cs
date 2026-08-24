@@ -24,6 +24,7 @@ public sealed class GridOptionsBuilder<T>
     private int _debounceMilliseconds = 300;
     private string _theme = "grid";
     private string _minHeight = "64rem";
+    private int _filterValuesLimit = 200;
     private string _emptyMessage = "No records found.";
     private Func<T, string?>? _rowKey;
     private bool _enableRowSelection;
@@ -81,6 +82,13 @@ public sealed class GridOptionsBuilder<T>
     public GridOptionsBuilder<T> WithMinHeight(string minHeight)
     {
         _minHeight = minHeight?.Trim() ?? string.Empty;
+        return this;
+    }
+
+    /// <summary>Max distinct values returned by Excel-style value-count lists.</summary>
+    public GridOptionsBuilder<T> WithFilterValuesLimit(int limit)
+    {
+        _filterValuesLimit = Math.Max(limit, 1);
         return this;
     }
 
@@ -161,6 +169,7 @@ public sealed class GridOptionsBuilder<T>
             DebounceMilliseconds = _debounceMilliseconds,
             Theme = _theme,
             MinHeight = _minHeight,
+            FilterValuesLimit = _filterValuesLimit,
             EmptyMessage = _emptyMessage,
             EnableRowSelection = _enableRowSelection,
             RowKey = _rowKey,

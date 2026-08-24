@@ -1,3 +1,4 @@
+using System.Text.Json;
 using NetOpenGrid.Domain.Abstractions;
 using NetOpenGrid.Domain.GridQuerying;
 
@@ -32,8 +33,30 @@ internal sealed class StringFilterStrategy<TSource>(Func<TSource, string?> selec
             FilterOperator.LessThanOrEqual => Ordered(value, static c => c <= 0),
             FilterOperator.IsEmpty => _empty,
             FilterOperator.IsNotEmpty => _notEmpty,
+            FilterOperator.In => In(value),
             _ => null
         };
+    }
+
+    private IFilterStrategy<TSource> In(string json)
+    {
+        var set = ParseInValues(json, static v => v, StringComparer.OrdinalIgnoreCase);
+        return new Lambda(item => set.Contains(selector(item) ?? string.Empty));
+    }
+
+    internal static HashSet<string> ParseInValues(string json, Func<string, string> transform, IEqualityComparer<string>? comparer = null) =>
+        new(ParseInList(json).Select(transform), comparer ?? StringComparer.Ordinal);
+
+    private static List<string> ParseInList(string json)
+    {
+        try
+        {
+            return JsonSerializer.Deserialize<List<string>>(json) ?? [];
+        }
+        catch (JsonException)
+        {
+            return [];
+        }
     }
 
     private IFilterStrategy<TSource> Ordered(string value, Func<int, bool> accept) =>

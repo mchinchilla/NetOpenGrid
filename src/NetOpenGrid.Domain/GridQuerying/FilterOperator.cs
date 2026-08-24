@@ -12,5 +12,6 @@ public enum FilterOperator
     LessThan,
     LessThanOrEqual,
     IsEmpty,
-    IsNotEmpty
+    IsNotEmpty,
+    In
 }

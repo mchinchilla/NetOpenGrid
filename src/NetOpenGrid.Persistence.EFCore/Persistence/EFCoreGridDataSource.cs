@@ -1,8 +1,11 @@
+using System.Linq.Expressions;
+using System.Reflection;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using NetOpenGrid.Application.Options;
 using NetOpenGrid.Domain;
 using NetOpenGrid.Domain.Abstractions;
+using NetOpenGrid.Domain.Columns;
 using NetOpenGrid.Domain.GridQuerying;
 using NetOpenGrid.Domain.Results;
 
@@ -13,7 +16,7 @@ namespace NetOpenGrid.Persistence;
 /// IQueryable&lt;T&gt; (full SQL push-down) using the same column definitions,
 /// operator whitelist and invariant parsing rules as the in-memory pipeline.
 /// </summary>
-public sealed class EFCoreGridDataSource<T> : IGridDataSource<T> where T : class
+public sealed class EFCoreGridDataSource<T> : IGridDataSource<T>, IGridValueCountSource<T> where T : class
 {
     private readonly GridOptions<T> _options;
     private readonly IServiceProvider? _serviceProvider;
@@ -54,6 +57,26 @@ public sealed class EFCoreGridDataSource<T> : IGridDataSource<T> where T : class
         return await ExecuteAsync(source, query, _options, cancellationToken);
     }
 
+    /// <summary>Excel-style distinct counts: GROUP BY on the column selector, excluding the column's own filter.</summary>
+    public async ValueTask<GridValueCounts> GetValuesAsync(GridColumn<T> column, GridQuery context, CancellationToken cancellationToken = default)
+    {
+        if (column.SelectorExpression is null || !column.IsFilterable)
+        {
+            return new GridValueCounts([], 0);
+        }
+
+        IQueryable<T> source;
+        if (_scopedQueryFactory is not null)
+        {
+            using var scope = _serviceProvider!.CreateScope();
+            source = _scopedQueryFactory(scope.ServiceProvider);
+            return await GetValuesCoreAsync(source, column, context, _options, cancellationToken);
+        }
+
+        source = await _queryFactory!(cancellationToken);
+        return await GetValuesCoreAsync(source, column, context, _options, cancellationToken);
+    }
+
     private static async ValueTask<PageResult<T>> ExecuteAsync(
         IQueryable<T> source,
         GridQuery query,
@@ -61,27 +84,7 @@ public sealed class EFCoreGridDataSource<T> : IGridDataSource<T> where T : class
         CancellationToken cancellationToken)
     {
         var paging = NormalizePaging(query, options);
-
-        var filtered = source;
-        foreach (var filter in query.Filters)
-        {
-            if (!options.TryGetColumn(filter.Field, out var column))
-            {
-                continue;
-            }
-
-            if (EFGridExpressionTranslator.CreateFilter(column, filter.Operator, filter.Value) is { } predicate)
-            {
-                filtered = filtered.Where(predicate);
-            }
-        }
-
-        if (!string.IsNullOrEmpty(query.Search) &&
-            EFGridExpressionTranslator.CreateSearch(options.Columns, query.Search) is { } searchPredicate)
-        {
-            filtered = filtered.Where(searchPredicate);
-        }
-
+        var filtered = ApplyFilters(source, query, options);
         var totalCount = await filtered.CountAsync(cancellationToken);
 
         var sorted = filtered;
@@ -103,6 +106,66 @@ public sealed class EFCoreGridDataSource<T> : IGridDataSource<T> where T : class
         return new PageResult<T>(items, totalCount, paging.Page, paging.PageSize);
     }
 
+    private static async ValueTask<GridValueCounts> GetValuesCoreAsync(
+        IQueryable<T> source,
+        GridColumn<T> column,
+        GridQuery context,
+        GridOptions<T> options,
+        CancellationToken cancellationToken)
+    {
+        var filtered = ApplyFilters(source, context, options, excludeField: column.Field);
+
+        var lambda = column.SelectorExpression!;
+        var keyLambda = Expression.Lambda<Func<T, object?>>(
+            Expression.Convert(lambda.Body, typeof(object)),
+            (ParameterExpression)lambda.Parameters[0]);
+
+        var rows = await filtered
+            .GroupBy(keyLambda, ElementSelector())
+            .Select(KeyValueProjection.Build())
+            .ToListAsync(cancellationToken);
+
+        var values = rows
+            .Select(row => new GridValueCount(column.KeyFormatter?.Invoke(row.Key) ?? row.Key?.ToString() ?? string.Empty, row.Count))
+            .OrderBy(static v => v.Value, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        return new GridValueCounts(
+            values.Take(options.FilterValuesLimit).ToList(),
+            values.Count);
+    }
+
+    private static IQueryable<T> ApplyFilters(IQueryable<T> source, GridQuery query, GridOptions<T> options, string? excludeField = null)
+    {
+        var filtered = source;
+
+        foreach (var filter in query.Filters)
+        {
+            if (excludeField is not null && string.Equals(filter.Field, excludeField, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            if (!options.TryGetColumn(filter.Field, out var column))
+            {
+                continue;
+            }
+
+            if (EFGridExpressionTranslator.CreateFilter(column, filter.Operator, filter.Value) is { } predicate)
+            {
+                filtered = filtered.Where(predicate);
+            }
+        }
+
+        if (!string.IsNullOrEmpty(query.Search) &&
+            EFGridExpressionTranslator.CreateSearch(options.Columns, query.Search) is { } searchPredicate)
+        {
+            filtered = filtered.Where(searchPredicate);
+        }
+
+        return filtered;
+    }
+
     private static PageRequest NormalizePaging(GridQuery query, GridOptions<T> options)
     {
         var requested = query.Paging;
@@ -122,6 +185,31 @@ public sealed class EFCoreGridDataSource<T> : IGridDataSource<T> where T : class
             throw new GridConfigurationException(
                 "EFCoreGridDataSource requires expression selectors for sortable/filterable/searchable columns. " +
                 $"Use the AddColumn(e => e.Property, ...) expression overload for: {string.Join(", ", missing)}.");
+        }
+    }
+
+    internal sealed record KeyValueCount(object? Key, int Count)
+    {
+        public static readonly ConstructorInfo Ctor =
+            typeof(KeyValueCount).GetConstructor([typeof(object), typeof(int)])!;
+    }
+
+    private static Expression<Func<T, T>> ElementSelector()
+    {
+        var parameter = Expression.Parameter(typeof(T), "x");
+        return Expression.Lambda<Func<T, T>>(parameter, parameter);
+    }
+
+    private static class KeyValueProjection
+    {
+        internal static Expression<Func<IGrouping<object?, T>, KeyValueCount>> Build()
+        {
+            var g = Expression.Parameter(typeof(IGrouping<object?, T>), "g");
+            var body = Expression.New(
+                EFCoreGridDataSource<T>.KeyValueCount.Ctor,
+                Expression.Property(g, nameof(IGrouping<object?, T>.Key)),
+                Expression.Call(typeof(Enumerable), nameof(Enumerable.Count), [typeof(T)], g));
+            return Expression.Lambda<Func<IGrouping<object?, T>, KeyValueCount>>(body, g);
         }
     }
 }

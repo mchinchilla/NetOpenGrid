@@ -109,6 +109,51 @@ public class GridEndpointTests : IClassFixture<HostFactory>
     }
 
     [Fact]
+    public async Task ValuesEndpoint_ReturnsCounts_ExcludingOwnFilter()
+    {
+        var client = _factory.CreateClient();
+
+        var context = $"filter={Uri.EscapeDataString("""department:in:["Design"]""")}";
+        var response = await client.GetAsync($"/netgrid/employees/values?field=department&{context}");
+
+        response.EnsureSuccessStatusCode();
+        var json = await response.Content.ReadAsStringAsync();
+
+        using var doc = System.Text.Json.JsonDocument.Parse(json);
+        var values = doc.RootElement.GetProperty("values");
+
+        Assert.Equal(6, doc.RootElement.GetProperty("totalDistinct").GetInt32());
+        Assert.Equal(6, values.GetArrayLength());
+
+        var design = values.EnumerateArray().Single(v => v.GetProperty("value").GetString() == "Design");
+        var expected = EmployeeData.All.Count(e => e.Department == Department.Design);
+        Assert.Equal(expected, design.GetProperty("count").GetInt32());
+    }
+
+    [Fact]
+    public async Task Rows_InFilter_MatchesAnyValue()
+    {
+        var client = _factory.CreateClient();
+        var expected = EmployeeData.All.Count(e => e.Department is Department.Design or Department.Finance);
+
+        var filter = $"filter={Uri.EscapeDataString("""department:in:["Design","Finance"]""")}";
+        var response = await client.GetAsync($"/netgrid/employees/rows?{filter}&pageSize=5");
+
+        response.EnsureSuccessStatusCode();
+        Assert.Equal(expected.ToString(), response.Headers.GetValues("X-Grid-Total").Single());
+    }
+
+    [Fact]
+    public async Task Shell_MarksListModeColumns()
+    {
+        var client = _factory.CreateClient();
+        var html = await (await client.GetAsync("/netgrid/employees")).Content.ReadAsStringAsync();
+
+        Assert.Contains("\"mode\":\"list\"", html);   // fullName (text) · department (enum) · active (bool)
+        Assert.Contains("\"mode\":\"op\"", html);     // salary / hiredOn / score
+    }
+
+    [Fact]
     public async Task UnknownGridId_Returns404()
     {
         var client = _factory.CreateClient();

@@ -1,3 +1,4 @@
+using System.Text.Json;
 using NetOpenGrid.Domain.Abstractions;
 using NetOpenGrid.Domain.GridQuerying;
 
@@ -12,7 +13,7 @@ internal sealed class EqualityFilterStrategy<TSource, TKey>(Func<TSource, TKey> 
     {
         get
         {
-            var ops = FilterOpSet.Equals | FilterOpSet.NotEquals;
+            var ops = FilterOpSet.Equals | FilterOpSet.NotEquals | FilterOpSet.In;
             if (_supportsEmpty)
             {
                 ops |= FilterOpSet.IsEmpty | FilterOpSet.IsNotEmpty;
@@ -35,6 +36,8 @@ internal sealed class EqualityFilterStrategy<TSource, TKey>(Func<TSource, TKey> 
                 return new Lambda(item => selector(item) is null);
             case FilterOperator.IsNotEmpty:
                 return new Lambda(item => selector(item) is not null);
+            case FilterOperator.In:
+                return CreateIn(rawValue ?? string.Empty);
         }
 
         var target = rawValue ?? string.Empty;
@@ -49,6 +52,22 @@ internal sealed class EqualityFilterStrategy<TSource, TKey>(Func<TSource, TKey> 
         };
     }
 
+    private IFilterStrategy<TSource> CreateIn(string json)
+    {
+        List<string> values;
+        try
+        {
+            values = JsonSerializer.Deserialize<List<string>>(json) ?? [];
+        }
+        catch (JsonException)
+        {
+            values = [];
+        }
+
+        var set = values.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        return new Lambda(item => set.Contains(selector(item)?.ToString() ?? string.Empty));
+    }
+
     private sealed class Lambda(Func<TSource, bool> matches) : IFilterStrategy<TSource>
     {
         public bool Matches(TSource item) => matches(item);
@@ -59,13 +78,18 @@ internal sealed class EnumFilterStrategy<TSource, TKey>(Func<TSource, TKey> sele
     : IFilterStrategyFactory<TSource>
     where TKey : struct, Enum
 {
-    public FilterOpSet SupportedOps => FilterOpSet.Equals | FilterOpSet.NotEquals;
+    public FilterOpSet SupportedOps => FilterOpSet.Equals | FilterOpSet.NotEquals | FilterOpSet.In;
 
     public IFilterStrategy<TSource>? Create(FilterOperator op, string? rawValue)
     {
         if ((SupportedOps & FilterOperatorMapper.ToSet(op)) == 0)
         {
             return null;
+        }
+
+        if (op == FilterOperator.In)
+        {
+            return CreateIn(rawValue ?? string.Empty);
         }
 
         if (!Enum.TryParse(rawValue, ignoreCase: true, out TKey target))
@@ -79,6 +103,32 @@ internal sealed class EnumFilterStrategy<TSource, TKey>(Func<TSource, TKey> sele
             FilterOperator.NotEquals => new Lambda(item => !EqualityComparer<TKey>.Default.Equals(selector(item), target)),
             _ => null
         };
+    }
+
+    private IFilterStrategy<TSource> CreateIn(string json)
+    {
+        List<string> values;
+        try
+        {
+            values = JsonSerializer.Deserialize<List<string>>(json) ?? [];
+        }
+        catch (JsonException)
+        {
+            values = [];
+        }
+
+        var targets = new HashSet<TKey>();
+        foreach (var value in values)
+        {
+            if (Enum.TryParse(value, ignoreCase: true, out TKey parsed))
+            {
+                targets.Add(parsed);
+            }
+        }
+
+        return targets.Count == 0
+            ? NeverMatch<TSource>.Instance
+            : new Lambda(item => targets.Contains(selector(item)));
     }
 
     private sealed class Lambda(Func<TSource, bool> matches) : IFilterStrategy<TSource>

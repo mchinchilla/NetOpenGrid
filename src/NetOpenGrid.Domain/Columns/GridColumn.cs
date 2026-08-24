@@ -29,6 +29,12 @@ public sealed class GridColumn<T>
     /// </summary>
     public GridFilterValueParser? FilterValueParser { get; init; }
 
+    /// <summary>Raw (parseable-back) display of the column key for value-count lists; in-memory grouping.</summary>
+    public Func<T, string?>? RawKeyFormat { get; init; }
+
+    /// <summary>Grouped key (boxed) → raw display string; EF value-count lists.</summary>
+    public Func<object?, string?>? KeyFormatter { get; init; }
+
     public ISortStrategy<T>? SortStrategy { get; init; }
     public IFilterStrategyFactory<T>? FilterFactory { get; init; }
     public ISearchStrategy<T>? SearchStrategy { get; init; }

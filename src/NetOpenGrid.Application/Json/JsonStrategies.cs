@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text.Json;
+using NetOpenGrid.Application.Strategies;
 using NetOpenGrid.Domain.Abstractions;
 using NetOpenGrid.Domain.Columns;
 using NetOpenGrid.Domain.GridQuerying;
@@ -83,13 +84,33 @@ internal static class JsonStrategies
 
     internal sealed class FilterStrategyFactory(string field, FilterOpSet supportedOps) : IFilterStrategyFactory<JsonElement>
     {
-        public FilterOpSet SupportedOps { get; } = supportedOps;
+        public FilterOpSet SupportedOps { get; } = supportedOps | FilterOpSet.In;
 
         public IFilterStrategy<JsonElement>? Create(FilterOperator op, string? rawValue)
         {
             if ((SupportedOps & FilterOperatorMapper.ToSet(op)) == 0)
             {
                 return null;
+            }
+
+            if (op == FilterOperator.In)
+            {
+                List<string> values;
+                try
+                {
+                    values = JsonSerializer.Deserialize<List<string>>(rawValue ?? string.Empty) ?? [];
+                }
+                catch (JsonException)
+                {
+                    values = [];
+                }
+
+                if (values.Count == 0)
+                {
+                    return NeverMatch<JsonElement>.Instance;
+                }
+
+                return new Lambda(item => values.Any(value => Compare(item, value, strict: true) == 0));
             }
 
             var value = rawValue ?? string.Empty;

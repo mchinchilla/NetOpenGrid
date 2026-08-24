@@ -22,6 +22,7 @@ public sealed class JsonGridOptionsBuilder
     private int _debounceMilliseconds = 300;
     private string _theme = "grid";
     private string _minHeight = "64rem";
+    private int _filterValuesLimit = 200;
     private string _emptyMessage = "No records found.";
     private Func<JsonElement, string?>? _rowKey;
     private bool _enableRowSelection;
@@ -36,6 +37,7 @@ public sealed class JsonGridOptionsBuilder
     public JsonGridOptionsBuilder WithDebounce(int milliseconds) { _debounceMilliseconds = milliseconds; return this; }
     public JsonGridOptionsBuilder WithTheme(string themeName) { _theme = themeName; return this; }
     public JsonGridOptionsBuilder WithMinHeight(string minHeight) { _minHeight = minHeight?.Trim() ?? string.Empty; return this; }
+    public JsonGridOptionsBuilder WithFilterValuesLimit(int limit) { _filterValuesLimit = Math.Max(limit, 1); return this; }
     public JsonGridOptionsBuilder WithEmptyMessage(string message) { _emptyMessage = message; return this; }
     public JsonGridOptionsBuilder WithNavLinks(params GridNavLink[] links) { _navLinks = [.. links]; return this; }
 
@@ -95,6 +97,7 @@ public sealed class JsonGridOptionsBuilder
             DebounceMilliseconds = _debounceMilliseconds,
             Theme = _theme,
             MinHeight = _minHeight,
+            FilterValuesLimit = _filterValuesLimit,
             EmptyMessage = _emptyMessage,
             EnableRowSelection = _enableRowSelection,
             RowKey = _rowKey,

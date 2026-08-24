@@ -91,4 +91,15 @@ public class FilterOperatorMapperTests
             Assert.Contains(op, FilterOperatorMapper.ToOperators(FilterOperatorMapper.ToSet(op)));
         }
     }
+
+    [Fact]
+    public void In_Operator_HasTokenAndFlag()
+    {
+        Assert.True(FilterOperatorMapper.TryParse("in", out var op));
+        Assert.Equal(FilterOperator.In, op);
+        Assert.Equal("in", FilterOperatorMapper.ToToken(FilterOperator.In));
+        Assert.True(FilterOpSet.All.HasFlag(FilterOpSet.In));
+        Assert.True(FilterOpSet.Text.HasFlag(FilterOpSet.In));
+        Assert.True(FilterOpSet.Numeric.HasFlag(FilterOpSet.In));
+    }
 }

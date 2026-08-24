@@ -119,6 +119,11 @@ public sealed class JsonColumnBuilder
                 JsonStrategies.TryGetProperty(element, _field, out var value)
                     ? JsonStrategies.Format(value)
                     : null,
+            RawKeyFormat = element =>
+                JsonStrategies.TryGetProperty(element, _field, out var keyValue)
+                    ? JsonStrategies.Format(keyValue)
+                    : null,
+            KeyFormatter = boxed => boxed is JsonElement jsonElement ? JsonStrategies.Format(jsonElement) : null,
             RawCellHtml = _rawCellHtml,
             SortStrategy = _sortable ? new JsonStrategies.SortStrategy(_field) : null,
             FilterFactory = filterFactory,

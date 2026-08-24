@@ -1,3 +1,5 @@
+using System.Globalization;
+using System.Text.Json;
 using NetOpenGrid.Application.Binding;
 using NetOpenGrid.Application.Engine;
 using NetOpenGrid.Application.Options;
@@ -11,6 +13,8 @@ namespace NetOpenGrid.Infrastructure.Runtime;
 /// </summary>
 public sealed class GridRuntime<TItem> : IGridRuntime
 {
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+
     private readonly GridOptions<TItem> _options;
     private readonly IGridDataSource<TItem> _dataSource;
     private readonly Rendering.GridHtmlRenderer<TItem> _renderer;
@@ -39,6 +43,35 @@ public sealed class GridRuntime<TItem> : IGridRuntime
             result.Page.Page,
             result.Page.PageSize,
             Math.Max(result.Page.TotalPages, 1));
+    }
+
+    /// <summary>Excel-style distinct value counts for one column, under the current query context.</summary>
+    public async ValueTask<string> RenderValuesAsync(string field, GridRequestValues values, CancellationToken cancellationToken = default)
+    {
+        var normalization = GridRequestParser.Parse(values, _options);
+
+        if (!_options.TryGetColumn(field, out var column) || !column.IsFilterable)
+        {
+            return "{\"error\":\"unknown-field\"}";
+        }
+
+        if (_dataSource is not IGridValueCountSource<TItem> countingSource)
+        {
+            return "{\"values\":[],\"totalDistinct\":0,\"limit\":" +
+                   _options.FilterValuesLimit.ToString(CultureInfo.InvariantCulture) + "}";
+        }
+
+        var counts = await countingSource.GetValuesAsync(column, normalization.Query, cancellationToken);
+
+        var payload = JsonSerializer.Serialize(new
+        {
+            field,
+            totalDistinct = counts.TotalDistinct,
+            limit = _options.FilterValuesLimit,
+            values = counts.Values
+        }, JsonOptions);
+
+        return payload;
     }
 
     public async ValueTask<string> RenderShellAsync(GridRequestValues values, CancellationToken cancellationToken = default)

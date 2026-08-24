@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using NetOpenGrid.Application.Builders;
 using NetOpenGrid.Application.DataSources;
 using NetOpenGrid.Application.Options;
+using NetOpenGrid.Domain.Abstractions;
 using NetOpenGrid.Domain;
 using NetOpenGrid.Domain.GridQuerying;
 using Xunit;
@@ -190,5 +191,48 @@ public sealed class EFCoreGridDataSourceTests : IDisposable
             null));
 
         Assert.Equal(0, page.TotalCount);
+    }
+
+    [Fact]
+    public async Task InFilter_TranslatesToOrChain()
+    {
+        var expected = EfProductData.All.Count(p => p.Category is "Electronics" or "Toys");
+
+        var page = await CreateSource().LoadAsync(new GridQuery(
+            new PageRequest(1, 50),
+            [new SortDescriptor("id")],
+            [new FilterDescriptor("category", FilterOperator.In, """["Electronics","Toys"]""")],
+            null));
+
+        Assert.Equal(expected, page.TotalCount);
+        Assert.All(page.Items, p => Assert.Contains(p.Category, new List<string> { "Electronics", "Toys" }));
+    }
+
+    [Fact]
+    public async Task GetValuesAsync_GroupsOnSql_ExcludingOwnFilter()
+    {
+        var countingSource = (IGridValueCountSource<EfProduct>)CreateSource();
+        var column = _options.Columns.Single(c => c.Field == "category");
+
+        var context = new GridQuery(
+            new PageRequest(1, 50),
+            [],
+            [new FilterDescriptor("category", FilterOperator.In, """["Electronics"]"""), new FilterDescriptor("active", FilterOperator.Equals, "true")],
+            null);
+
+        var counts = await countingSource.GetValuesAsync(column, context);
+
+        // Own category filter ignored; active=true applied.
+        var expected = EfProductData.All
+            .Where(p => p.Active)
+            .GroupBy(p => p.Category)
+            .ToDictionary(g => g.Key, g => g.Count());
+
+        Assert.Equal(expected.Count, counts.TotalDistinct);
+
+        foreach (var value in counts.Values)
+        {
+            Assert.Equal(expected[value.Value], value.Count);
+        }
     }
 }

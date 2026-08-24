@@ -14,7 +14,7 @@ Sin virtual DOM. Sin reflexión en el hot path. Sin compilar expresiones por req
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind-v4-06B6D4?style=for-the-badge&logo=tailwindcss&logoColor=white)](https://tailwindcss.com)
 [![HTMX](https://img.shields.io/badge/HTMX-2-3D72D7?style=for-the-badge)](https://htmx.org)
 [![Alpine.js](https://img.shields.io/badge/Alpine.js-3-77C1CB?style=for-the-badge&logo=alpinedotjs&logoColor=white)](https://alpinejs.dev)
-[![Tests](https://img.shields.io/badge/tests-67%20passing-16A34A?style=for-the-badge&logo=xunit&logoColor=white)](#-testing)
+[![Tests](https://img.shields.io/badge/tests-78%20passing-16A34A?style=for-the-badge&logo=xunit&logoColor=white)](#-testing)
 [![License](https://img.shields.io/badge/License-MIT-F59E0B?style=for-the-badge)](LICENSE)
 
 </div>
@@ -254,6 +254,29 @@ Reglas importantes:
 
 ---
 
+## 📋 Filtros tipo Excel (conteo por valor)
+
+Las columnas de texto, enum y bool muestran un **checklist con valores distintos y conteos** en el popover:
+
+- Los conteos respetan el contexto actual (búsqueda + otros filtros) e **ignoran el propio filtro de la columna** — semántica Excel clásica.
+- Búsqueda interna, *Select all* y aviso de truncado (`FilterValuesLimit`, default 200).
+- Al aplicar genera un filtro `in`:
+
+```
+filter=category:in:["Books","Toys"]
+```
+
+- Endpoint de valores (usado por el popover, útil también para tu propio UI):
+
+```
+GET /netgrid/:id/values?field=category&<contexto>
+→ {"field":"category","totalDistinct":5,"limit":200,"values":[{"value":"Books","count":28},…]}
+```
+
+Implementado en los tres motores: in-memory (agrupación en snapshot), JSON (`JsonElement`) y EF Core (`GROUP BY` traducido a SQL). Las columnas numéricas/fecha mantienen el popover de operador.
+
+---
+
 ## 📚 Referencia de configuración
 
 ### `GridOptionsBuilder<T>`
@@ -425,7 +448,7 @@ dotnet test
 ## 🗺️ Roadmap
 
 - [x] `EFCoreGridDataSource<T>`: push-down de filtros/sort a SQL reutilizando las mismas estrategias
-- [ ] Filtros tipo Excel con conteo por valor
+- [x] Filtros tipo Excel con conteo por valor
 - [ ] Columnas fijadas (pin) y reordenables
 - [ ] i18n de labels del cliente
 - [ ] Export server-side genérico (CSV/Excel) como parte del componente

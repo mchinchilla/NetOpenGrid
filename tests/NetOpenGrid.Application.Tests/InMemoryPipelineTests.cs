@@ -113,4 +113,54 @@ public class InMemoryPipelineTests
         Assert.Equal(2, page.TotalCount);
         Assert.All(page.Items, p => Assert.True(p.Id is 2 or 4));
     }
+
+    [Fact]
+    public async Task InFilter_String_IsCaseInsensitive()
+    {
+        var source = new InMemoryGridDataSource<Person>(TestGrid.Options(), TestGrid.People);
+
+        var page = await source.LoadAsync(new GridQuery(
+            new PageRequest(1, 10),
+            [new SortDescriptor("id")],
+            [new FilterDescriptor("city", FilterOperator.In, """["LIMA","bogota"]""")],
+            null));
+
+        Assert.Equal(3, page.TotalCount);
+        Assert.All(page.Items, p => Assert.Contains(p.City, new List<string> { "Lima", "Bogota" }));
+    }
+
+    [Fact]
+    public async Task InFilter_Numeric_MatchesAny()
+    {
+        var source = new InMemoryGridDataSource<Person>(TestGrid.Options(), TestGrid.People);
+
+        var page = await source.LoadAsync(new GridQuery(
+            new PageRequest(1, 10),
+            [new SortDescriptor("id")],
+            [new FilterDescriptor("salary", FilterOperator.In, """["55000","90000"]""")],
+            null));
+
+        Assert.Equal([1, 4], page.Items.Select(p => p.Id));
+    }
+
+    [Fact]
+    public async Task ValueCounts_ExcludeOwnFilter_ButKeepContext()
+    {
+        var source = new InMemoryGridDataSource<Person>(TestGrid.Options(), TestGrid.People);
+        var column = TestGrid.Options().Columns.Single(c => c.Field == "city");
+
+        var context = new GridQuery(
+            new PageRequest(1, 10),
+            [],
+            [new FilterDescriptor("city", FilterOperator.In, """["Lima"]"""), new FilterDescriptor("salary", FilterOperator.GreaterThan, "60000")],
+            null);
+
+        var counts = await source.GetValuesAsync(column, context);
+
+        // Own city filter ignored; salary filter applied → only Lima rows above 60k.
+        var lima = Assert.Single(counts.Values);
+        Assert.Equal("Lima", lima.Value);
+        Assert.Equal(2, lima.Count);
+        Assert.Equal(1, counts.TotalDistinct);
+    }
 }
