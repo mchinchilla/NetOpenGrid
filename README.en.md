@@ -14,7 +14,7 @@ No virtual DOM. No reflection on the hot path. No per-request expression compila
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind-v4-06B6D4?style=for-the-badge&logo=tailwindcss&logoColor=white)](https://tailwindcss.com)
 [![HTMX](https://img.shields.io/badge/HTMX-2-3D72D7?style=for-the-badge)](https://htmx.org)
 [![Alpine.js](https://img.shields.io/badge/Alpine.js-3-77C1CB?style=for-the-badge&logo=alpinedotjs&logoColor=white)](https://alpinejs.dev)
-[![Tests](https://img.shields.io/badge/tests-101%20passing-16A34A?style=for-the-badge&logo=xunit&logoColor=white)](#-testing)
+[![Tests](https://img.shields.io/badge/tests-102%20passing-16A34A?style=for-the-badge&logo=xunit&logoColor=white)](#-testing)
 [![License](https://img.shields.io/badge/License-MIT-F59E0B?style=for-the-badge)](LICENSE)
 
 </div>
@@ -24,11 +24,17 @@ No virtual DOM. No reflection on the hot path. No per-request expression compila
 ## 📖 Table of contents
 
 - [Why it exists](#-why-it-exists)
+- [✨ Features](#-features)
 - [Stack](#-stack)
 - [Architecture](#-architecture)
 - [Quickstart](#-quickstart)
 - [Workflows](#-workflows)
 - [EF Core (SQL push-down)](#-ef-core-sql-push-down)
+- [Excel-style filters (per-value counts)](#-excel-style-filters-per-value-counts)
+- [Pinned & reorderable columns](#-pinned--reorderable-columns)
+- [Server-side CSV export](#-server-side-csv-export)
+- [i18n](#-i18n)
+- [Column grouping (nested)](#-column-grouping-nested)
 - [Configuration reference](#-configuration-reference)
 - [Column types & operators](#-column-types--operators)
 - [Client ↔ server contract](#-client--server-contract)
@@ -61,6 +67,28 @@ flowchart LR
 > Everything is compiled while building the options; the hot path only invokes delegates.
 
 ---
+
+---
+
+## ✨ Features
+
+| Category | Feature | Detail |
+|---|---|---|
+| 📊 **Data** | Pluggable sources | `InMemoryGridDataSource<T>` · `JsonGridDataSource` (`JsonElement`) · `EFCoreGridDataSource<T>` (SQL push-down) |
+| | Typed, reflection-free | Delegate or expression selectors; sort/filter/search strategies compiled once at startup |
+| 🔍 **Filters** | By operator | 11 operators with per-column-type whitelist (text/num/date/enum/bool) |
+| | Excel-style | Distinct-value checklist **with counts** (Excel context: ignores the column's own filter) |
+| | Global search | `q` with debounce, OR across `Searchable` columns |
+| ↕️ **Sorting** | Stable multi-sort | Shift-click, deterministic ties (decorated array), nulls first |
+| 🗂️ **Grouping** | Nested up to 3 levels | `groupby` + `expand` in the URL; chevron headers with counts; groups are paged |
+| 📄 **Paging** | Server-side | `pageSize` clamping, meta via headers, full deep-linking |
+| ☑️ **Selection** | Rows + export | Floating bar, select-all, CSV of selection or the full filtered dataset |
+| 📌 **Columns** | Pin + reorder | Sticky with JS-computed offsets, drag & drop persisted in `localStorage` |
+| 🌐 **i18n** | EN/ES presets | ~39 keys, per-key overrides, `__NETGRID__.locale` blob for the client |
+| 🎨 **Theming** | Tailwind v4 | `grid`/`midnight` presets, persisted dark mode, class scanning inside C# |
+| 🔌 **Self-contained** | Embedded assets | JS + HTMX + Alpine inside the assembly, served with immutable `?v={sha}` |
+| 🔗 **Deep links** | State in URL | `page·pageSize·sort·filter·q·groupby·expand·cols` — share the exact view |
+| ♿ **A11y** | Localized aria-labels | Roles, `aria-expanded`, focus rings, `x-cloak` |
 
 ## 🧱 Stack
 
@@ -219,6 +247,22 @@ flowchart LR
     CLI --> OUT["wwwroot/css/netopengrid-{theme}.css<br/>(Host and Example)"]
     OUT --> SHELL["shell: link rel=stylesheet per options.Theme"]
     CLI -. "detects classes inside the renderer's C#" .- SRC["GridHtmlRenderer.cs"]
+```
+
+### Workflow 5 — Nested grouping
+
+```mermaid
+flowchart TD
+    A["Picker: Group by department, city"] --> B["groupby=department,city"]
+    B --> C["Server: filters + sorts + groups<br/>pages = groups (not rows)"]
+    C --> D{"group in expand=?"}
+    D -->|"no"| E["collapsed header<br/>value + count"]
+    D -->|"yes"| F{"last level?"}
+    F -->|"no"| G["next-level sub-headers"]
+    F -->|"sí"| H["group rows"]
+    E --> I["chevron click → toggle path in expand= → refresh"]
+    G --> I
+    H --> I
 ```
 
 ---
@@ -410,6 +454,9 @@ Compact symbols accepted in the query: `=` `!=` `>` `>=` `<` `<=` `~` (contains)
 | `sort` | `salary:desc` (repeatable) | shift-click = stable multi-sort |
 | `filter` | `city:contains:li` · `amount:>=100` · `status:is-empty` | per-column whitelist |
 | `q` | `nico` | global search (OR across `Searchable` columns) |
+| `groupby` | `department,city` | nested grouping (max 3 levels); groups are paged |
+| `expand` | `department=Design\|city=Lima` | expanded group paths (URL-encoded values) |
+| `cols` | `email,fullName` | column order (drag & drop; validated, missing ones appended) |
 
 **Response** (`<tbody>` fragment + headers):
 
@@ -487,7 +534,7 @@ NetOpenGrid.slnx
 ├─ samples/NetOpenGrid.Example/        📦 minimal consumer example
 ├─ themes/                             🎨 Tailwind v4 sources (grid, midnight)
 ├─ tests/                              ✅ Domain · Application · EFCore · Integration
-└─ tools/                              🔧 build-themes.sh/.cmd · fetch-vendor.sh
+├─ tools/                              🔧 build-themes.sh/.cmd · fetch-vendor.sh · check-js.sh
 ```
 
 ---
@@ -498,13 +545,17 @@ NetOpenGrid.slnx
 dotnet test
 ```
 
-- **Domain**: paging, operators, results.
-- **Application**: builders (validation), parser (whitelist/clamps/symbols), pipeline (filter+sort+slice,
-  stability, nulls-first), per-type strategies (string/num/date/enum/bool), full JSON mode.
-- **EFCore**: SQL translation on in-memory SQLite (per-type filters, OR search, sort, paging) and
-  **result parity** against the in-memory pipeline over the same data.
-- **Integration**: real HTTP over `WebApplicationFactory` — sorting, filters, search, meta headers,
-  shell deep-link, 404s, CSV export and embedded assets (`/_netgrid/*`, content-type and caching).
+**102 tests**: Domain (20) · Application (42) · Integration (27) · EFCore (13).
+
+- **Domain**: paging, operators (incl. `In`), results.
+- **Application**: builders (validation, pin), parser (whitelist/clamps/symbols/JSON `in`), pipeline
+  (filter+sort+slice, stability, nulls-first), per-type strategies, `GridGrouper` (nested/expand/
+  group-paging/blank bucket), full JSON mode.
+- **EFCore**: SQL translation on in-memory SQLite (per-type filters incl. `In`, OR search, sort, paging,
+  `GROUP BY` value-counts, grouping) and **result parity** against the in-memory pipeline.
+- **Integration**: real HTTP over `WebApplicationFactory` — sorting, filters (operator + `in`), search,
+  rendered grouping, meta headers, deep-links (shell + `cols`), 404s, CSV export, i18n (ES shell),
+  embedded assets and JS-runtime health (anti-regression).
 
 ---
 
@@ -516,6 +567,10 @@ dotnet test
 - [x] Client label i18n
 - [x] Column grouping (nested up to 3 levels, URL-driven expand/collapse)
 - [x] Generic server-side export (CSV) as part of the component
+
+> **✅ Roadmap completed — the component is feature-complete.**
+> Future ideas: per-group aggregations (SUM/AVG in headers), drag columns into the group panel,
+> Excel (xlsx) export, right-side pinning, row virtualization.
 
 ---
 
