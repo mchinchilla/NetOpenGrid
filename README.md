@@ -14,7 +14,7 @@ Sin virtual DOM. Sin reflexión en el hot path. Sin compilar expresiones por req
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind-v4-06B6D4?style=for-the-badge&logo=tailwindcss&logoColor=white)](https://tailwindcss.com)
 [![HTMX](https://img.shields.io/badge/HTMX-2-3D72D7?style=for-the-badge)](https://htmx.org)
 [![Alpine.js](https://img.shields.io/badge/Alpine.js-3-77C1CB?style=for-the-badge&logo=alpinedotjs&logoColor=white)](https://alpinejs.dev)
-[![Tests](https://img.shields.io/badge/tests-91%20passing-16A34A?style=for-the-badge&logo=xunit&logoColor=white)](#-testing)
+[![Tests](https://img.shields.io/badge/tests-101%20passing-16A34A?style=for-the-badge&logo=xunit&logoColor=white)](#-testing)
 [![License](https://img.shields.io/badge/License-MIT-F59E0B?style=for-the-badge)](LICENSE)
 
 </div>
@@ -324,6 +324,21 @@ builder.Services.AddNetOpenGrid(
 
 ---
 
+## 🗂️ Agrupamiento por columna (anidado)
+
+`groupby=field1,field2,…` (hasta 3 niveles) + `expand=` para desplegar grupos. **Los grupos se paginan** (no las filas); expandir un grupo muestra sus sub-grupos o sus filas (estilo DevEx, cada nivel se expande por separado). Estado en la URL → deep-links con grupos abiertos.
+
+```
+GET /netgrid/:id/rows?groupby=department,city&expand=department=Design|city=Lima
+```
+
+- Toolbar con selector "Agrupar por..." + chips removibles por nivel.
+- Headers de grupo con chevron, conteo de filas y indentación por nivel; valores vacíos → bucket "(Vacíos)".
+- El orden de los grupos respeta el sort de la columna agrupada; los sorts restantes ordenan dentro de cada grupo.
+- Motores: in-memory y JSON agrupan en memoria; **EF Core** hace push-down de filtro+orden a SQL y construye el árbol sobre las filas coincidentes.
+
+---
+
 ## 📚 Referencia de configuración
 
 ### `GridOptionsBuilder<T>`
@@ -498,6 +513,7 @@ dotnet test
 - [x] Filtros tipo Excel con conteo por valor
 - [x] Columnas fijadas (pin) y reordenables
 - [x] i18n de labels del cliente
+- [x] Agrupamiento por columna (anidado hasta 3 niveles, expand/colapse por URL)
 - [x] Export server-side genérico (CSV) como parte del componente
 
 ---

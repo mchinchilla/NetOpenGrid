@@ -11,7 +11,7 @@ namespace NetOpenGrid.Application.DataSources;
 /// In-memory data source: pulls a snapshot asynchronously and runs the
 /// filter/sort/paginate pipeline over precompiled strategies.
 /// </summary>
-public class InMemoryGridDataSource<T> : IGridDataSource<T>, IGridValueCountSource<T>
+public class InMemoryGridDataSource<T> : IGridDataSource<T>, IGridValueCountSource<T>, IGridGroupingSource<T>
 {
     private readonly GridOptions<T> _options;
     private readonly Func<CancellationToken, ValueTask<IReadOnlyList<T>>> _snapshotLoader;
@@ -33,6 +33,14 @@ public class InMemoryGridDataSource<T> : IGridDataSource<T>, IGridValueCountSour
     {
         var snapshot = await _snapshotLoader(cancellationToken);
         return InMemoryGridPipeline.Process(snapshot, query, _options);
+    }
+
+    /// <summary>Grouped load: filter → sort → group tree (pages contain groups, not rows).</summary>
+    public async ValueTask<GroupedPageResult<T>> LoadGroupedAsync(GridQuery query, CancellationToken cancellationToken = default)
+    {
+        var snapshot = await _snapshotLoader(cancellationToken);
+        var rows = InMemoryGridPipeline.FilterAndSort(snapshot, query, _options);
+        return InMemoryGridPipeline.ProcessGrouped(rows, query, _options);
     }
 
     /// <summary>Excel-style counts: distinct raw values under the context query, excluding the column's own filter.</summary>

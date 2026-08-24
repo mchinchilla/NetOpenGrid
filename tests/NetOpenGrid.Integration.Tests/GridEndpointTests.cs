@@ -91,6 +91,7 @@ public class GridEndpointTests : IClassFixture<HostFactory>
         Assert.Contains("/_netgrid/netopengrid.js?v=", html);
         Assert.Contains("/css/netopengrid-grid.css", html);
         Assert.Contains("__NETGRID__.initial[\"employees\"]", html);
+        Assert.Contains("];__NETGRID__.locale=", html);   // state script: columns array closed before locale blob
         Assert.StartsWith("<tbody id=\"employees-body\">", html[(html.IndexOf("<tbody", StringComparison.Ordinal))..]);
     }
 
@@ -268,6 +269,57 @@ public class GridEndpointTests : IClassFixture<HostFactory>
         Assert.Equal("name,city", lines[0]);
         Assert.Equal("\"Ana, jr\",Madrid", lines[1]);
         Assert.Equal("\"Say \"\"hi\"\"\",\"Li\nma\"", lines[2]);
+    }
+
+    [Fact]
+    public async Task Rows_GroupedByDepartment_RendersGroupHeaders()
+    {
+        var client = _factory.CreateClient();
+        var response = await client.GetAsync("/netgrid/employees/rows?groupby=department&pageSize=10");
+        response.EnsureSuccessStatusCode();
+
+        var html = await response.Content.ReadAsStringAsync();
+        Assert.Contains("data-group-path=\"department=", html);
+        Assert.Contains("toggleGroup('department=", html);   // exact single-quoted JS call
+        Assert.DoesNotContain("toggleGroup(''", html);        // regression: doubled quotes break the expression
+        Assert.Contains("aria-expanded=\"false\"", html);
+
+        var expectedGroups = EmployeeData.All.Select(e => e.Department).Distinct().Count();
+        Assert.Equal(expectedGroups.ToString(), response.Headers.GetValues("X-Grid-Total").Single());
+    }
+
+    [Fact]
+    public async Task Rows_GroupExpanded_ShowsNestedRows()
+    {
+        var client = _factory.CreateClient();
+        var design = EmployeeData.All.Where(e => e.Department == Department.Design).ToList();
+
+        var expand = Uri.EscapeDataString("department=Design");
+        var html = await (await client.GetAsync($"/netgrid/employees/rows?groupby=department&expand={expand}&pageSize=10"))
+            .Content.ReadAsStringAsync();
+
+        Assert.Contains("aria-expanded=\"true\"", html);
+        Assert.Contains("data-group-path=\"department=Design\"", html);
+
+        foreach (var employee in design)
+        {
+            Assert.Contains(employee.FullName, html);
+        }
+    }
+
+    [Fact]
+    public async Task ClientRuntime_IsHealthy_NoCorruptedBlocks()
+    {
+        var client = _factory.CreateClient();
+        var js = await (await client.GetAsync("/_netgrid/netopengrid.js")).Content.ReadAsStringAsync();
+
+        // Regression guards: a stray duplicated block closer once broke the whole runtime
+        // (every Alpine expression on the page failed with "netgrid is not defined").
+        Assert.DoesNotContain("},\n      },\n\n      seedFromUrl", js);
+        Assert.Contains("Alpine.data('netgrid'", js);
+        Assert.Contains("document.addEventListener('alpine:init'", js);
+        Assert.Contains("toggleGroup(", js);
+        Assert.Contains("applyPinnedOffsets(", js);
     }
 
     [Fact]

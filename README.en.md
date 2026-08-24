@@ -14,7 +14,7 @@ No virtual DOM. No reflection on the hot path. No per-request expression compila
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind-v4-06B6D4?style=for-the-badge&logo=tailwindcss&logoColor=white)](https://tailwindcss.com)
 [![HTMX](https://img.shields.io/badge/HTMX-2-3D72D7?style=for-the-badge)](https://htmx.org)
 [![Alpine.js](https://img.shields.io/badge/Alpine.js-3-77C1CB?style=for-the-badge&logo=alpinedotjs&logoColor=white)](https://alpinejs.dev)
-[![Tests](https://img.shields.io/badge/tests-91%20passing-16A34A?style=for-the-badge&logo=xunit&logoColor=white)](#-testing)
+[![Tests](https://img.shields.io/badge/tests-101%20passing-16A34A?style=for-the-badge&logo=xunit&logoColor=white)](#-testing)
 [![License](https://img.shields.io/badge/License-MIT-F59E0B?style=for-the-badge)](LICENSE)
 
 </div>
@@ -324,6 +324,21 @@ builder.Services.AddNetOpenGrid(
 
 ---
 
+## 🗂️ Column grouping (nested)
+
+`groupby=field1,field2,…` (up to 3 levels) + `expand=` to open groups. **Groups are paged** (not rows); expanding a group reveals its sub-groups or rows (DevEx style — each level expands separately). State lives in the URL → deep links with groups open.
+
+```
+GET /netgrid/:id/rows?groupby=department,city&expand=department=Design|city=Lima
+```
+
+- Toolbar picker "Group by..." + removable per-level chips.
+- Group headers with chevron, row counts and per-level indentation; null values → a "(Blanks)" bucket.
+- Group order follows the grouped column's sort; remaining sorts order rows inside each group.
+- Engines: in-memory and JSON group in memory; **EF Core** pushes filter+sort down to SQL and builds the tree over the matching rows.
+
+---
+
 ## 📚 Configuration reference
 
 ### `GridOptionsBuilder<T>`
@@ -499,6 +514,7 @@ dotnet test
 - [x] Excel-style filters with per-value counts
 - [x] Pinned and reorderable columns
 - [x] Client label i18n
+- [x] Column grouping (nested up to 3 levels, URL-driven expand/collapse)
 - [x] Generic server-side export (CSV) as part of the component
 
 ---

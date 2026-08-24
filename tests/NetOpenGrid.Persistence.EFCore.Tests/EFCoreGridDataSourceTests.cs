@@ -170,6 +170,28 @@ public sealed class EFCoreGridDataSourceTests : IDisposable
     }
 
     [Fact]
+    public async Task GroupedLoad_NestedCounts_MatchSource()
+    {
+        var grouped = await CreateSource().LoadGroupedAsync(new GridQuery(
+            new PageRequest(1, 10),
+            [new SortDescriptor("id")],
+            [],
+            null,
+            ["category"],
+            ["category=Electronics"]));
+
+        var expected = EfProductData.All
+            .GroupBy(p => p.Category)
+            .ToDictionary(g => g.Key, g => g.Count());
+
+        Assert.Equal(expected.Count, grouped.TotalGroups);
+
+        var electronics = grouped.Groups.Single(g => g.Value == "Electronics");
+        Assert.Equal(expected["Electronics"], electronics.Count);
+        Assert.Equal(expected["Electronics"], electronics.Rows.Count);
+    }
+
+    [Fact]
     public void Constructor_RequiresExpressionSelectors()
     {
         var options = new GridOptionsBuilder<EfProduct>()

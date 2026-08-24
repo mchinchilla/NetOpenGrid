@@ -38,14 +38,87 @@ public static class GridRequestParser
         var sorts = ParseSorts(values.GetAll(SortParam), options, warnings);
         var filters = ParseFilters(values.GetAll(FilterParam), options, warnings);
         var search = ParseSearch(values.Get(SearchParam), warnings);
+        var groupBy = ParseGroupBy(values, options, warnings);
+        var expanded = ParseExpanded(values, warnings);
 
         var query = new GridQuery(
             new PageRequest(page, pageSize),
             sorts,
             filters,
-            search);
+            search,
+            groupBy,
+            expanded);
 
         return new GridQueryNormalization(query, warnings);
+    }
+
+    private const int MaxGroupLevels = 3;
+    private const int MaxExpandedPaths = 100;
+
+    private static List<string> ParseGroupBy<T>(
+        GridRequestValues values,
+        GridOptions<T> options,
+        List<string> warnings)
+    {
+        var fields = new List<string>();
+
+        foreach (var raw in values.GetAll("groupby"))
+        {
+            foreach (var field in raw.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries))
+            {
+                if (!options.TryGetColumn(field, out var column))
+                {
+                    warnings.Add($"Ignored unknown group field '{field}'.");
+                    continue;
+                }
+
+                if (fields.Contains(column.Field, StringComparer.Ordinal))
+                {
+                    continue;
+                }
+
+                if (fields.Count >= MaxGroupLevels)
+                {
+                    warnings.Add($"Grouping limited to {MaxGroupLevels} levels; ignored '{field}'.");
+                    continue;
+                }
+
+                fields.Add(column.Field);
+            }
+        }
+
+        return fields;
+    }
+
+    private static List<string> ParseExpanded(GridRequestValues values, List<string> warnings)
+    {
+        var paths = new List<string>();
+
+        foreach (var raw in values.GetAll("expand"))
+        {
+            foreach (var path in raw.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries))
+            {
+                if (path.Length > 500)
+                {
+                    warnings.Add("Ignored oversized expand path.");
+                    continue;
+                }
+
+                if (paths.Contains(path, StringComparer.Ordinal))
+                {
+                    continue;
+                }
+
+                if (paths.Count >= MaxExpandedPaths)
+                {
+                    return paths;
+                }
+
+                paths.Add(path);
+            }
+        }
+
+        return paths;
     }
 
     private static List<SortDescriptor> ParseSorts<T>(

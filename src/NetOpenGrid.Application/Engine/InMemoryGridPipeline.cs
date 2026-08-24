@@ -55,6 +55,14 @@ internal static class StableSort
 /// <summary>In-memory pipeline: filter → global search → stable sort → count → slice.</summary>
 internal static class InMemoryGridPipeline
 {
+    /// <summary>Groups an already filtered + sorted row list into the paging-by-groups tree.</summary>
+    public static GroupedPageResult<T> ProcessGrouped<T>(
+        IReadOnlyList<T> rows,
+        GridQuery query,
+        Options.GridOptions<T> options)
+        => GridGrouper<T>.Group(rows, query, options);
+
+
     public static PageResult<T> Process<T>(
         IReadOnlyList<T> source,
         GridQuery query,
@@ -66,13 +74,8 @@ internal static class InMemoryGridPipeline
         var paging = new PageRequest(requested.Page < 1 ? 1 : requested.Page, pageSize)
             .Normalized(options.MaxPageSize);
 
-        var predicates = BuildPredicates(query, options);
-        var working = ApplyPredicates(source, predicates);
-
-        var totalCount = working.Count;
-
-        var sorts = BindSorts(query.Sorts, options);
-        var sortedItems = sorts.Count > 0 ? StableSort.Sort(working, sorts) : working is T[] a ? a : [.. working];
+        var sortedItems = FilterAndSort(source, query, options);
+        var totalCount = sortedItems.Length;
 
         var take = Math.Min(paging.PageSize, Math.Max(totalCount - paging.Skip, 0));
         var items = new List<T>(take > 0 ? take : 0);
@@ -82,6 +85,19 @@ internal static class InMemoryGridPipeline
         }
 
         return new PageResult<T>(items, totalCount, paging.Page, paging.PageSize);
+    }
+
+    /// <summary>Filter → global search → stable sort. Shared by the flat and grouped pipelines.</summary>
+    internal static T[] FilterAndSort<T>(
+        IReadOnlyList<T> source,
+        GridQuery query,
+        GridOptions<T> options)
+    {
+        var predicates = BuildPredicates(query, options);
+        var working = ApplyPredicates(source, predicates);
+
+        var sorts = BindSorts(query.Sorts, options);
+        return sorts.Count > 0 ? StableSort.Sort(working, sorts) : working is T[] a ? a : [.. working];
     }
 
     internal static List<Func<T, bool>> BuildPredicates<T>(GridQuery query, GridOptions<T> options, string? excludeField = null)

@@ -2,6 +2,7 @@ using System.Linq.Expressions;
 using System.Reflection;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using NetOpenGrid.Application.Engine;
 using NetOpenGrid.Application.Options;
 using NetOpenGrid.Domain;
 using NetOpenGrid.Domain.Abstractions;
@@ -16,7 +17,7 @@ namespace NetOpenGrid.Persistence;
 /// IQueryable&lt;T&gt; (full SQL push-down) using the same column definitions,
 /// operator whitelist and invariant parsing rules as the in-memory pipeline.
 /// </summary>
-public sealed class EFCoreGridDataSource<T> : IGridDataSource<T>, IGridValueCountSource<T> where T : class
+public sealed class EFCoreGridDataSource<T> : IGridDataSource<T>, IGridValueCountSource<T>, IGridGroupingSource<T> where T : class
 {
     private readonly GridOptions<T> _options;
     private readonly IServiceProvider? _serviceProvider;
@@ -77,6 +78,25 @@ public sealed class EFCoreGridDataSource<T> : IGridDataSource<T>, IGridValueCoun
         return await GetValuesCoreAsync(source, column, context, _options, cancellationToken);
     }
 
+    /// <summary>
+    /// Grouped load: filter + sort are pushed down to SQL; the grouping tree is
+    /// built in memory over the matching rows (documented v1 trade-off).
+    /// </summary>
+    public async ValueTask<GroupedPageResult<T>> LoadGroupedAsync(GridQuery query, CancellationToken cancellationToken = default)
+    {
+        if (_scopedQueryFactory is not null)
+        {
+            using var scope = _serviceProvider!.CreateScope();
+            var scopedSource = ApplyFilters(_scopedQueryFactory(scope.ServiceProvider), query, _options);
+            var scopedRows = await ApplySorts(scopedSource, query, _options).ToListAsync(cancellationToken);
+            return GridGrouper<T>.Group(scopedRows, query, _options);
+        }
+
+        var source = ApplyFilters(await _queryFactory!(cancellationToken), query, _options);
+        var rows = await ApplySorts(source, query, _options).ToListAsync(cancellationToken);
+        return GridGrouper<T>.Group(rows, query, _options);
+    }
+
     private static async ValueTask<PageResult<T>> ExecuteAsync(
         IQueryable<T> source,
         GridQuery query,
@@ -86,17 +106,7 @@ public sealed class EFCoreGridDataSource<T> : IGridDataSource<T>, IGridValueCoun
         var paging = NormalizePaging(query, options);
         var filtered = ApplyFilters(source, query, options);
         var totalCount = await filtered.CountAsync(cancellationToken);
-
-        var sorted = filtered;
-        var thenBy = false;
-        foreach (var sort in query.Sorts)
-        {
-            if (options.TryGetColumn(sort.Field, out var column) && column.SelectorExpression is not null)
-            {
-                sorted = EFGridExpressionTranslator.ApplySort(sorted, column, sort.Direction, thenBy);
-                thenBy = true;
-            }
-        }
+        var sorted = ApplySorts(filtered, query, options);
 
         var items = await sorted
             .Skip(paging.Skip)
@@ -133,6 +143,22 @@ public sealed class EFCoreGridDataSource<T> : IGridDataSource<T>, IGridValueCoun
         return new GridValueCounts(
             values.Take(options.FilterValuesLimit).ToList(),
             values.Count);
+    }
+
+    private static IQueryable<T> ApplySorts(IQueryable<T> source, GridQuery query, GridOptions<T> options)
+    {
+        var sorted = source;
+        var thenBy = false;
+        foreach (var sort in query.Sorts)
+        {
+            if (options.TryGetColumn(sort.Field, out var column) && column.SelectorExpression is not null)
+            {
+                sorted = EFGridExpressionTranslator.ApplySort(sorted, column, sort.Direction, thenBy);
+                thenBy = true;
+            }
+        }
+
+        return sorted;
     }
 
     private static IQueryable<T> ApplyFilters(IQueryable<T> source, GridQuery query, GridOptions<T> options, string? excludeField = null)

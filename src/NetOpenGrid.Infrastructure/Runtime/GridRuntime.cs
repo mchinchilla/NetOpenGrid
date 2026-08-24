@@ -6,6 +6,7 @@ using NetOpenGrid.Application.Options;
 using NetOpenGrid.Domain.Abstractions;
 using NetOpenGrid.Domain.Columns;
 using NetOpenGrid.Domain.GridQuerying;
+using NetOpenGrid.Domain.Results;
 
 namespace NetOpenGrid.Infrastructure.Runtime;
 
@@ -41,8 +42,23 @@ public sealed class GridRuntime<TItem> : IGridRuntime
     public async ValueTask<GridRowsResponse> RenderRowsAsync(GridRequestValues values, CancellationToken cancellationToken = default)
     {
         var normalization = GridRequestParser.Parse(values, _options);
+        var columnOrder = ResolveColumnOrder(values);
+
+        if (normalization.Query.GroupFields.Count > 0 && _dataSource is IGridGroupingSource<TItem> groupingSource)
+        {
+            var grouped = await groupingSource.LoadGroupedAsync(normalization.Query, cancellationToken);
+            var groupedHtml = await _renderer.RenderGroupedRowsAsync(grouped, columnOrder, cancellationToken);
+
+            return new GridRowsResponse(
+                groupedHtml,
+                grouped.TotalGroups,
+                grouped.Page,
+                grouped.PageSize,
+                Math.Max(grouped.TotalPages, 1));
+        }
+
         var result = await new GridQueryEngine<TItem>(_dataSource).ExecuteAsync(normalization.Query, cancellationToken);
-        var html = await _renderer.RenderRowsAsync(result, ResolveColumnOrder(values), cancellationToken);
+        var html = await _renderer.RenderRowsAsync(result, columnOrder, cancellationToken);
 
         return new GridRowsResponse(
             html,

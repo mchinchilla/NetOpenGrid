@@ -41,6 +41,9 @@ public sealed class GridHtmlRenderer<TItem>
     private const string DownloadIcon =
         "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"currentColor\" class=\"h-4 w-4\"><path d=\"M12 2.25a.75.75 0 0 1 .75.75v11.69l3.22-3.22a.75.75 0 1 1 1.06 1.06l-4.5 4.5a.75.75 0 0 1-1.06 0l-4.5-4.5a.75.75 0 1 1 1.06-1.06l3.22 3.22V3a.75.75 0 0 1 .75-.75Z\" /><path d=\"M3.75 15a.75.75 0 0 1 .75.75v2.25A1.5 1.5 0 0 0 6 19.5h12a1.5 1.5 0 0 0 1.5-1.5v-2.25a.75.75 0 0 1 1.5 0V18a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3v-2.25A.75.75 0 0 1 3.75 15Z\" /></svg>";
 
+    private const string ChevronIcon =
+        "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 20 20\" fill=\"currentColor\" class=\"h-3.5 w-3.5\"><path fill-rule=\"evenodd\" d=\"M7.21 14.77a.75.75 0 0 1 .02-1.06L11.168 10 7.23 6.29a.75.75 0 1 1 1.04-1.08l4.5 4.25a.75.75 0 0 1 0 1.08l-4.5 4.25a.75.75 0 0 1-1.06-.02Z\" clip-rule=\"evenodd\" /></svg>";
+
     private const string SpinnerIcon =
         "<svg xmlns=\"http://www.w3.org/2000/svg\" fill=\"none\" viewBox=\"0 0 24 24\" class=\"h-5 w-5 animate-spin text-brand-600 dark:text-brand-400\"><circle class=\"opacity-25\" cx=\"12\" cy=\"12\" r=\"10\" stroke=\"currentColor\" stroke-width=\"4\"></circle><path class=\"opacity-75\" fill=\"currentColor\" d=\"M4 12a8 8 0 0 1 8-8v4a4 4 0 0 0-4 4H4z\"></path></svg>";
 
@@ -83,6 +86,104 @@ public sealed class GridHtmlRenderer<TItem>
         {
             _stringBuilderPool.Return(sb.Clear());
         }
+    }
+
+    /// <summary>Grouped tbody: header rows (collapsible, nested) + expanded leaf rows.</summary>
+    public ValueTask<string> RenderGroupedRowsAsync(
+        GroupedPageResult<TItem> grouped,
+        IReadOnlyList<GridColumn<TItem>>? columnOrder = null,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var columns = ResolveColumns(columnOrder);
+        var sb = _stringBuilderPool.Get();
+        try
+        {
+            using var writer = new StringWriter(sb);
+
+            if (grouped.Groups.Count == 0)
+            {
+                AppendEmptyRow(writer, columns);
+            }
+            else
+            {
+                foreach (var group in grouped.Groups)
+                {
+                    AppendGroup(writer, group, columns);
+                }
+            }
+
+            return ValueTask.FromResult(sb.ToString());
+        }
+        finally
+        {
+            _stringBuilderPool.Return(sb.Clear());
+        }
+    }
+
+    private void AppendGroup(TextWriter w, GridGroup<TItem> group, IReadOnlyList<GridColumn<TItem>> columns)
+    {
+        var expanded = group.Children.Count > 0 || group.Rows.Count > 0;
+        var label = group.Value.Length == 0 ? L("group.blank") : group.Value;
+        var indent = 8 + group.Level * 20;
+
+        w.Write("<tr class=\"group-header bg-neutral-50/80 dark:bg-neutral-800/40\" data-group-path=\"");
+        AppendEncoded(w, group.Path);
+        w.Write("\">");
+        w.Write("<td colspan=\"");
+        w.Write((columns.Count + (_options.EnableRowSelection ? 1 : 0)).ToString(CultureInfo.InvariantCulture));
+        w.Write("\" class=\"px-4 py-2\">");
+        w.Write("<div class=\"flex items-center gap-2\" style=\"padding-left:");
+        w.Write(indent.ToString(CultureInfo.InvariantCulture));
+        w.Write("px\">");
+
+        w.Write("<button type=\"button\" class=\"inline-flex cursor-pointer items-center text-neutral-500 transition hover:text-brand-600 dark:hover:text-brand-400\" @click=\"toggleGroup(");
+        AppendJsQuoted(w, group.Path);
+        w.Write(")\" aria-expanded=\"");
+        w.Write(expanded ? "true" : "false");
+        w.Write("\" aria-label=\"");
+        w.Write(L("group.toggle.aria"));
+        w.Write("\">");
+        w.Write("<span class=\"inline-flex transition-transform ");
+        if (expanded)
+        {
+            w.Write("rotate-90");
+        }
+
+        w.Write("\">");
+        w.Write(ChevronIcon);
+        w.Write("</span>");
+        w.Write("</button>");
+
+        w.Write("<span class=\"text-sm font-semibold\">");
+        AppendEncoded(w, label);
+        w.Write("</span>");
+
+        w.Write("<span class=\"badge badge-muted tabular-nums\">");
+        w.Write(group.Count.ToString(CultureInfo.InvariantCulture));
+        w.Write("</span>");
+
+        w.Write("</div></td></tr>");
+
+        foreach (var child in group.Children)
+        {
+            AppendGroup(w, child, columns);
+        }
+
+        foreach (var row in group.Rows)
+        {
+            AppendDataRow(w, row, columns);
+        }
+    }
+
+    private void AppendEmptyRow(TextWriter w, IReadOnlyList<GridColumn<TItem>> columns)
+    {
+        w.Write("<tr><td colspan=\"");
+        w.Write((columns.Count + (_options.EnableRowSelection ? 1 : 0)).ToString(CultureInfo.InvariantCulture));
+        w.Write("\" class=\"px-4 py-12 text-center text-sm text-neutral-500 dark:text-neutral-400\">");
+        AppendEncoded(w, _options.EmptyMessage);
+        w.Write("</td></tr>");
     }
 
     private IReadOnlyList<GridColumn<TItem>> ResolveColumns(IReadOnlyList<GridColumn<TItem>>? columnOrder)
@@ -238,6 +339,24 @@ public sealed class GridHtmlRenderer<TItem>
         w.Write("\" class=\"input-base pl-9\">");
         w.Write("</div>");
 
+        w.Write("<select aria-label=\"");
+        w.Write(L("group.aria"));
+        w.Write("\" @change=\"addGroupBy($event.target.value); $event.target.value = ''\" class=\"input-base !w-auto py-2 text-sm\">");
+        w.Write("<option value=\"\">");
+        w.Write(L("group.placeholder"));
+        w.Write("</option>");
+
+        foreach (var column in _visibleColumns)
+        {
+            w.Write("<option value=\"");
+            AppendEncoded(w, column.Field);
+            w.Write("\">");
+            AppendEncoded(w, column.Header);
+            w.Write("</option>");
+        }
+
+        w.Write("</select>");
+
         w.Write("<button type=\"button\" @click=\"toggleTheme()\" class=\"btn-icon\" aria-label=\"");
         w.Write(L("theme.aria"));
         w.Write("\">");
@@ -259,6 +378,14 @@ public sealed class GridHtmlRenderer<TItem>
 
     private void AppendFilterChips(TextWriter w)
     {
+        w.Write("<div class=\"flex flex-wrap items-center gap-2\" x-show=\"groupBy.length\" x-cloak>");
+        w.Write("<template x-for=\"g in groupBy\" :key=\"g\">");
+        w.Write("<button type=\"button\" @click=\"removeGroupBy(g)\" class=\"chip\" title=\"");
+        w.Write(L("group.aria"));
+        w.Write("\">");
+        w.Write("<span x-text=\"columnInfo(g)?.header || g\"></span><span aria-hidden=\"true\">&times;</span>");
+        w.Write("</button></template></div>");
+
         w.Write("<div class=\"flex flex-wrap items-center gap-2\" x-show=\"activeFilters.length\" x-cloak>");
         w.Write("<template x-for=\"entry in activeFilters\" :key=\"entry.field\">");
         w.Write("<button type=\"button\" @click=\"clearFilter(entry.field)\" class=\"chip\" title=\"");
@@ -572,65 +699,70 @@ public sealed class GridHtmlRenderer<TItem>
 
         foreach (var item in page.Items)
         {
-            var rowKey = _options.EnableRowSelection ? _options.RowKey?.Invoke(item) : null;
-
-            w.Write("<tr class=\"border-b border-neutral-100 transition-colors last:border-0 hover:bg-brand-50/40 dark:border-neutral-800/60 dark:hover:bg-white/[0.04]\"");
-
-            if (_options.EnableRowSelection && rowKey is not null)
-            {
-                w.Write(" data-id=\"");
-                AppendEncoded(w, rowKey);
-                w.Write('"');
-            }
-
-            w.Write('>');
-
-            if (_options.EnableRowSelection && rowKey is not null)
-            {
-                w.Write("<td data-pin=\"__select\" style=\"left:0\" class=\"sticky left-0 z-10 w-10 border-r border-neutral-100 bg-white px-4 py-2 align-middle hover:bg-brand-50/40 dark:border-neutral-800/60 dark:bg-neutral-900 dark:hover:bg-white/[0.04]\">");
-                w.Write("<input type=\"checkbox\" class=\"h-4 w-4 accent-brand-600\" aria-label=\"");
-        w.Write(L("select.row.aria"));
-        w.Write("\" @change=\"toggleSelection($el.closest('tr').dataset.id)\" :checked=\"isSelected(");
-                AppendJsQuoted(w, rowKey);
-                w.Write(")\">");
-                w.Write("</td>");
-            }
-
-            foreach (var column in columns)
-            {
-                w.Write("<td data-field=\"");
-                AppendEncoded(w, column.Field);
-                w.Write("\"");
-
-                if (column.IsPinned)
-                {
-                    w.Write(" data-pin=\"");
-                    AppendEncoded(w, column.Field);
-                    w.Write("\" style=\"left:0\" class=\"sticky z-10 border-r border-neutral-100 bg-white hover:bg-brand-50/40 dark:border-neutral-800/60 dark:bg-neutral-900 dark:hover:bg-white/[0.04]");
-                }
-                else
-                {
-                    w.Write(" class=\"");
-                }
-
-                w.Write(" whitespace-nowrap px-4 py-2.5 align-middle ");
-                w.Write(TextAlignClass(column.Align));
-                w.Write("\">");
-
-                if (column.RawCellHtml is { } rawCell)
-                {
-                    w.Write(rawCell(item));
-                }
-                else
-                {
-                    AppendEncoded(w, column.Format(item));
-                }
-
-                w.Write("</td>");
-            }
-
-            w.Write("</tr>");
+            AppendDataRow(w, item, columns);
         }
+    }
+
+    private void AppendDataRow(TextWriter w, TItem item, IReadOnlyList<GridColumn<TItem>> columns)
+    {
+        var rowKey = _options.EnableRowSelection ? _options.RowKey?.Invoke(item) : null;
+
+        w.Write("<tr class=\"border-b border-neutral-100 transition-colors last:border-0 hover:bg-brand-50/40 dark:border-neutral-800/60 dark:hover:bg-white/[0.04]\"");
+
+        if (_options.EnableRowSelection && rowKey is not null)
+        {
+            w.Write(" data-id=\"");
+            AppendEncoded(w, rowKey);
+            w.Write('"');
+        }
+
+        w.Write('>');
+
+        if (_options.EnableRowSelection && rowKey is not null)
+        {
+            w.Write("<td data-pin=\"__select\" style=\"left:0\" class=\"sticky left-0 z-10 w-10 border-r border-neutral-100 bg-white px-4 py-2 align-middle hover:bg-brand-50/40 dark:border-neutral-800/60 dark:bg-neutral-900 dark:hover:bg-white/[0.04]\">");
+            w.Write("<input type=\"checkbox\" class=\"h-4 w-4 accent-brand-600\" aria-label=\"");
+            w.Write(L("select.row.aria"));
+            w.Write("\" @change=\"toggleSelection($el.closest('tr').dataset.id)\" :checked=\"isSelected(");
+            AppendJsQuoted(w, rowKey);
+            w.Write(")\">");
+            w.Write("</td>");
+        }
+
+        foreach (var column in columns)
+        {
+            w.Write("<td data-field=\"");
+            AppendEncoded(w, column.Field);
+            w.Write("\"");
+
+            if (column.IsPinned)
+            {
+                w.Write(" data-pin=\"");
+                AppendEncoded(w, column.Field);
+                w.Write("\" style=\"left:0\" class=\"sticky z-10 border-r border-neutral-100 bg-white hover:bg-brand-50/40 dark:border-neutral-800/60 dark:bg-neutral-900 dark:hover:bg-white/[0.04]");
+            }
+            else
+            {
+                w.Write(" class=\"");
+            }
+
+            w.Write(" whitespace-nowrap px-4 py-2.5 align-middle ");
+            w.Write(TextAlignClass(column.Align));
+            w.Write("\">");
+
+            if (column.RawCellHtml is { } rawCell)
+            {
+                w.Write(rawCell(item));
+            }
+            else
+            {
+                AppendEncoded(w, column.Format(item));
+            }
+
+            w.Write("</td>");
+        }
+
+        w.Write("</tr>");
     }
 
     private void AppendStateScript(TextWriter w, PageResult<TItem> page)
@@ -675,6 +807,7 @@ public sealed class GridHtmlRenderer<TItem>
             w.Write("}");
         }
 
+        w.Write("];");
         w.Write("__NETGRID__.locale=");
         w.Write(JsonSerializer.Serialize(_locale.Strings, JsonOptions));
         w.Write(";</script>");
