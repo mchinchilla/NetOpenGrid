@@ -16,6 +16,7 @@ public sealed class GridColumnBuilder<TSource, TKey>
 {
     private readonly string _field;
     private Func<TSource, TKey> _selector;
+    private Expression<Func<TSource, TKey>>? _selectorExpression;
     private string? _header;
     private Func<TKey, string?>? _formatter;
     private IComparer<TKey>? _comparer;
@@ -31,7 +32,11 @@ public sealed class GridColumnBuilder<TSource, TKey>
     private string? _widthCss;
     private ColumnDataType? _dataType;
 
-    internal GridColumnBuilder(string field, Func<TSource, TKey> selector)
+    internal GridColumnBuilder(string field, Func<TSource, TKey> selector) : this(field, selector, null)
+    {
+    }
+
+    internal GridColumnBuilder(string field, Func<TSource, TKey> selector, Expression<Func<TSource, TKey>>? expression)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(field);
         ArgumentNullException.ThrowIfNull(selector);
@@ -42,6 +47,7 @@ public sealed class GridColumnBuilder<TSource, TKey>
 
         _field = field;
         _selector = selector;
+        _selectorExpression = expression;
     }
 
     public string Field => _field;
@@ -71,6 +77,7 @@ public sealed class GridColumnBuilder<TSource, TKey>
     public GridColumnBuilder<TSource, TKey> Selector(Expression<Func<TSource, TKey>> expression)
     {
         ArgumentNullException.ThrowIfNull(expression);
+        _selectorExpression = expression;
         _selector = expression.Compile();
         return this;
     }
@@ -197,6 +204,8 @@ public sealed class GridColumnBuilder<TSource, TKey>
             SortStrategy = sortStrategy,
             FilterFactory = filterFactory,
             SearchStrategy = searchStrategy,
+            SelectorExpression = _selectorExpression,
+            FilterValueParser = BuildFilterValueParser(),
             AllowedOps = allowedOps,
             IsSortable = sortStrategy is not null,
             IsSearchable = searchStrategy is not null,
@@ -212,6 +221,59 @@ public sealed class GridColumnBuilder<TSource, TKey>
         (typeof(TKey) == typeof(string)
             ? (IComparer<TKey>)(object)StringComparer.Ordinal
             : Comparer<TKey>.Default);
+
+    /// <summary>
+    /// Non-generic literal parser for SQL push-down sources: resolved once per column
+    /// (TKey known at build time) from the custom parser or the built-in tables.
+    /// </summary>
+    private GridFilterValueParser? BuildFilterValueParser()
+    {
+        if (_parser is not null)
+        {
+            return Wrap(_parser);
+        }
+
+        if (typeof(TKey) == typeof(string))
+        {
+            return static (string raw, out object? parsed) =>
+            {
+                parsed = raw;
+                return true;
+            };
+        }
+
+        var scalar = DefaultValueParsers<TKey>.TryGet();
+        if (scalar is not null)
+        {
+            return Wrap(scalar);
+        }
+
+        var enumParser = DefaultValueParsers<TKey>.TryGetEnum();
+        if (enumParser is not null)
+        {
+            return Wrap(enumParser);
+        }
+
+        if (typeof(TKey) == typeof(bool))
+        {
+            return static (string raw, out object? parsed) =>
+            {
+                var ok = bool.TryParse(raw, out var value);
+                parsed = value;
+                return ok;
+            };
+        }
+
+        return null;
+    }
+
+    private static GridFilterValueParser Wrap(GridValueParser<TKey> parser) =>
+        (string raw, out object? parsed) =>
+        {
+            var ok = parser(raw, out var typed);
+            parsed = typed;
+            return ok;
+        };
 
     private Func<TSource, string?> ResolveFormatter()
     {

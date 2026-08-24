@@ -130,8 +130,8 @@ public sealed class GridOptionsBuilder<T>
         ArgumentNullException.ThrowIfNull(selector);
 
         var rawName = ExtractMemberName(selector);
-        var columnBuilder = new GridColumnBuilder<T, TKey>(Camelize(rawName), selector.Compile());
-        columnBuilder.SetDefaultHeader(GridColumnBuilder<T, TKey>.HumanizeFieldName(rawName));
+        var columnBuilder = new GridColumnBuilder<T, TKey>(Camelize(rawName), selector.Compile(), selector);
+        columnBuilder.SetDefaultHeader(ColumnNameHumanizer.Humanize(rawName));
         configure?.Invoke(columnBuilder);
 
         if (!_fields.Add(columnBuilder.Field))

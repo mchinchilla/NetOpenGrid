@@ -1,5 +1,8 @@
 <div align="center">
 
+[![Docs: ES](https://img.shields.io/badge/docs-ES-4F46E5?style=flat-square)](README.md)
+[![Docs: EN](https://img.shields.io/badge/docs-EN-9CA3AF?style=flat-square)](README.en.md)
+
 # ⚡ NetOpenGrid
 
 **El grid para .NET 10 que apuesta por otra arquitectura: HTML del servidor + delegados precompilados.**
@@ -11,7 +14,7 @@ Sin virtual DOM. Sin reflexión en el hot path. Sin compilar expresiones por req
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind-v4-06B6D4?style=for-the-badge&logo=tailwindcss&logoColor=white)](https://tailwindcss.com)
 [![HTMX](https://img.shields.io/badge/HTMX-2-3D72D7?style=for-the-badge)](https://htmx.org)
 [![Alpine.js](https://img.shields.io/badge/Alpine.js-3-77C1CB?style=for-the-badge&logo=alpinedotjs&logoColor=white)](https://alpinejs.dev)
-[![Tests](https://img.shields.io/badge/tests-55%20passing-16A34A?style=for-the-badge&logo=xunit&logoColor=white)](#-testing)
+[![Tests](https://img.shields.io/badge/tests-67%20passing-16A34A?style=for-the-badge&logo=xunit&logoColor=white)](#-testing)
 
 </div>
 
@@ -24,6 +27,7 @@ Sin virtual DOM. Sin reflexión en el hot path. Sin compilar expresiones por req
 - [Arquitectura](#-arquitectura)
 - [Quickstart](#-quickstart)
 - [Workflows](#-workflows)
+- [EF Core (push-down a SQL)](#-ef-core-push-down-a-sql)
 - [Referencia de configuración](#-referencia-de-configuración)
 - [Tipos de columna y operadores](#-tipos-de-columna-y-operadores)
 - [Contrato cliente ↔ servidor](#-contrato-cliente--servidor)
@@ -38,14 +42,14 @@ Sin virtual DOM. Sin reflexión en el hot path. Sin compilar expresiones por req
 
 ## 🧭 Por qué existe
 
-Los grids clásicos (DevExpress, DevExtreme) muestran miles de filas en el cliente y pagan el precio en
+Las suites de grid comerciales tradicionales muestran miles de filas en el cliente y pagan el precio en
 JS masivo y reflexión. **NetOpenGrid invierte el modelo**: el servidor renderiza solo el `<tbody>` de la
 página actual y toda la inteligencia (filtro, orden, búsqueda, paginado) se ejecuta sobre
 **delegados compilados una sola vez** al configurar el grid.
 
 ```mermaid
 flowchart LR
-    A["DevExtreme / XtraGrid"] -->|"miles de filas al cliente"| B["JS pesado + reflexión"]
+    A["Grids comerciales tradicionales"] -->|"miles de filas al cliente"| B["JS pesado + reflexión"]
     C["NetOpenGrid"] -->|"solo la página actual (tbody)"| D["HTML + delegados precompilados"]
     B --> E["🐌 hidratación lenta"]
     D --> F["🚀 primer render = render final"]
@@ -65,6 +69,7 @@ flowchart LR
 | ⚡ Reactividad | **HTMX 2** | `htmx.ajax` para intercambiar solo el `<tbody>` |
 | 🪶 Estado local | **Alpine.js 3** | paginación, filtros, selección, tema — sin framework |
 | 🎨 Estilos | **Tailwind CSS v4** (CLI standalone) | themes compilados a `wwwroot/css`, dark mode |
+| 🗄️ Base de datos | **EF Core 10** (opcional) | push-down de filtros/orden a SQL |
 | ✅ Testing | **xUnit** + `WebApplicationFactory` | unitarias + integración HTTP end-to-end |
 
 ---
@@ -141,7 +146,7 @@ builder.Services.AddNetOpenGrid(o =>        // opcional: rutas de assets/css
 
 ```csharp
 app.UseStaticFiles();     // solo para tu css de themes
-app.MapNetOpenGrid();     // GET /netgrid/{id} · GET /netgrid/{id}/rows · GET /_netgrid/*
+app.MapNetOpenGrid();     // GET /netgrid/:id · /rows · /_netgrid/*
 ```
 
 **3. Abre `http://localhost:PORT/netgrid/employees`.** Eso es todo: el componente sirve su propio
@@ -216,6 +221,37 @@ flowchart LR
 
 ---
 
+## 🗄️ EF Core (push-down a SQL)
+
+`EFCoreGridDataSource<T>` compone `Where` / `OrderBy` / `Skip` / `Take` sobre tu `IQueryable<T>`
+usando **las mismas columnas, operadores y reglas de parsing** que el grid in-memory.
+
+```csharp
+builder.Services.AddDbContext<AppDb>(o => o.UseSqlite(cs));
+
+services.AddNetOpenGrid().AddGrid<Employee>("employees",
+    options => options
+        .AddColumn(e => e.FullName, c => c.Searchable())   // ← usa overloads de Expression
+        .AddColumn(e => e.Salary)
+        .AddColumn(e => e.HiredOn),
+    (sp, opts) => new EFCoreGridDataSource<Employee>(
+        opts,
+        sp,
+        (sp, db) => db.Set<Employee>().AsNoTracking()));
+```
+
+Reglas importantes:
+
+| Regla | Detalle |
+|---|---|
+| 🧾 **Columnas con Expression** | Para push-down, define las columnas con los overloads `AddColumn(e => e.Prop, …)`. Si una columna ordenable/filtrable solo tiene `Func`, falla al construir con un error que lista los campos. |
+| 🔤 **Strings vía `LIKE`** | `contains/starts-with/ends-with/equals` se traducen a `EF.Functions.Like` (insensible a mayúsculas en collations por defecto; wildcards escapados). |
+| 🔢 **Valores parseados 1 vez** | El literal del filtro se parsea con el **mismo** parser invariante del pipeline in-memory y se incrusta como constante en el árbol. |
+| 🧵 **DbContext con scope** | El data source crea un `IServiceScope` por request — tu `DbContext` registrado como scoped funciona tal cual. |
+| ↩️ **Orden estable** | SQL no garantiza estabilidad en empates: agrega un sort por columna única para paginación determinista. |
+
+---
+
 ## 📚 Referencia de configuración
 
 ### `GridOptionsBuilder<T>`
@@ -239,7 +275,7 @@ flowchart LR
 | Método | Default | Descripción |
 |---|---|---|
 | `.Header(text)` | nombre humanizado | `birthDate` → "Birth date" |
-| `.Selector(Func)` / `.Selector(Expression)` | — | La expresión se compila **una vez** aquí |
+| `.Selector(Func)` / `.Selector(Expression)` | — | La expresión se compila **una vez** aquí (y se conserva para push-down EF) |
 | `.Format(Func<TKey,string?>)` | `DefaultValueFormatter` | Invariant culture, sin boxing |
 | `.RawCellHtml(Func<T,string?>)` | — | ⚠️ HTML de confianza (badges); lo demás siempre se escapa |
 | `.Sortable / .Filterable / .Searchable` | `true/true/auto` | `auto`: búsqueda solo en columnas de texto |
@@ -311,8 +347,6 @@ var options = new JsonGridOptionsBuilder()
     .WithId("orders")
     .AddColumn("customer", c => c.Searchable())
     .AddColumn("amount", c => c.AllowedOps(FilterOpSet.Numeric))
-    .AddColumn("status", c => c.RawCellHtml(row =>
-        $"<span class=\"badge badge-{row.GetProperty(\"status\")}\">…</span>"))
     .Build();
 
 services.AddNetOpenGrid().AddGrid(options, (_, o) => new JsonGridDataSource(o, json));
@@ -348,6 +382,7 @@ Propiedades faltantes se comportan como `null` (orden inferior, `is-empty` ✓).
 | Fragmento = solo `<tbody>` | El payload mínimo posible por interacción |
 | `ValueTask` solo en la frontera de datos | Async donde importa, CPU sync por diseño |
 | Assets embebidos con `?v=hash` | 1 request, caché inmutable, sin build steps |
+| EF: literales parseados 1 vez e incrustados como constantes | Push-down a SQL con las mismas reglas del pipeline |
 
 ---
 
@@ -356,14 +391,15 @@ Propiedades faltantes se comportan como `null` (orden inferior, `is-empty` ✓).
 ```
 NetOpenGrid.slnx
 ├─ src/
-│  ├─ NetOpenGrid.Domain/           💎 modelo puro (queries, columnas, estrategias, contratos)
-│  ├─ NetOpenGrid.Application/      ⚙️ builders, parser, pipeline, engine, modo JSON
-│  ├─ NetOpenGrid.Infrastructure/   🛠️ runtime keyed-DI, renderer, endpoints, assets embebidos
-│  └─ NetOpenGrid.Host/             🖥️ demo (employees <T> + orders JSON + export CSV)
-├─ samples/NetOpenGrid.Example/     📦 ejemplo de consumo mínimo
-├─ themes/                          🎨 fuentes Tailwind v4 (grid, midnight)
-├─ tests/                           ✅ Domain · Application · Integration (WebApplicationFactory)
-└─ tools/                           🔧 build-themes.sh/.cmd · fetch-vendor.sh
+│  ├─ NetOpenGrid.Domain/              💎 modelo puro (queries, columnas, estrategias, contratos)
+│  ├─ NetOpenGrid.Application/         ⚙️ builders, parser, pipeline, engine, modo JSON
+│  ├─ NetOpenGrid.Infrastructure/      🛠️ runtime keyed-DI, renderer, endpoints, assets embebidos
+│  ├─ NetOpenGrid.Persistence.EFCore/  🗄️ EFCoreGridDataSource<T> (push-down a SQL)
+│  └─ NetOpenGrid.Host/                🖥️ demo (employees <T> + orders JSON + export CSV)
+├─ samples/NetOpenGrid.Example/        📦 ejemplo de consumo mínimo
+├─ themes/                             🎨 fuentes Tailwind v4 (grid, midnight)
+├─ tests/                              ✅ Domain · Application · EFCore · Integration
+└─ tools/                              🔧 build-themes.sh/.cmd · fetch-vendor.sh
 ```
 
 ---
@@ -371,12 +407,14 @@ NetOpenGrid.slnx
 ## ✅ Testing
 
 ```bash
-dotnet test          # 55 tests: Domain (19) · Application (27) · Integration (9)
+dotnet test
 ```
 
 - **Domain**: paginado, operadores, resultados.
 - **Application**: builders (validación), parser (whitelist/clamps/símbolos), pipeline (filtro+sort+slice,
   estabilidad, nulls-first), estrategias por tipo (string/num/date/enum/bool), modo JSON completo.
+- **EFCore**: traducción a SQL sobre SQLite in-memory (filtros por tipo, búsqueda OR, orden, paginado)
+  y **paridad de resultados** contra el pipeline in-memory sobre los mismos datos.
 - **Integration**: HTTP real sobre `WebApplicationFactory` — sorting, filtros, búsqueda, headers de meta,
   deep-link en shell, 404s, export CSV y assets embebidos (`/_netgrid/*`, content-type y caché).
 
@@ -384,7 +422,7 @@ dotnet test          # 55 tests: Domain (19) · Application (27) · Integration 
 
 ## 🗺️ Roadmap
 
-- [ ] `EFCoreGridDataSource<T>`: push-down de filtros/sort a SQL reutilizando las mismas estrategias
+- [x] `EFCoreGridDataSource<T>`: push-down de filtros/sort a SQL reutilizando las mismas estrategias
 - [ ] Filtros tipo Excel con conteo por valor
 - [ ] Columnas fijadas (pin) y reordenables
 - [ ] i18n de labels del cliente
@@ -394,8 +432,11 @@ dotnet test          # 55 tests: Domain (19) · Application (27) · Integration 
 
 <div align="center">
 
-**NetOpenGrid** — *server-first grids for .NET 10*
+**NetOpenGrid** — *grids server-first para .NET 10*
 
 `dotnet run --project samples/NetOpenGrid.Example` → `http://localhost:5188/netgrid/products`
+
+[![Docs: ES](https://img.shields.io/badge/docs-ES-4F46E5?style=flat-square)](README.md)
+[![Docs: EN](https://img.shields.io/badge/docs-EN-9CA3AF?style=flat-square)](README.en.md)
 
 </div>

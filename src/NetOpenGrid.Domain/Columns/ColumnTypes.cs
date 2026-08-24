@@ -18,3 +18,6 @@ public enum ColumnAlign
 }
 
 public delegate bool GridValueParser<TKey>(string raw, out TKey parsed);
+
+/// <summary>Non-generic value parser (built once per column with TKey known) used by SQL push-down sources.</summary>
+public delegate bool GridFilterValueParser(string raw, out object? parsed);

@@ -1,3 +1,4 @@
+using System.Linq.Expressions;
 using NetOpenGrid.Domain.Abstractions;
 using NetOpenGrid.Domain.GridQuerying;
 
@@ -15,6 +16,18 @@ public sealed class GridColumn<T>
 
     /// <summary>When set, its output is emitted as trusted raw HTML (server-controlled only).</summary>
     public Func<T, string?>? RawCellHtml { get; init; }
+
+    /// <summary>
+    /// The original selector expression (kept when defined via the Expression overloads).
+    /// Required by SQL push-down sources such as <c>EFCoreGridDataSource&lt;T&gt;</c>.
+    /// </summary>
+    public LambdaExpression? SelectorExpression { get; init; }
+
+    /// <summary>
+    /// Non-generic filter-literal parser (built once, TKey known at build time).
+    /// Used by SQL push-down sources to embed parsed constants into expression trees.
+    /// </summary>
+    public GridFilterValueParser? FilterValueParser { get; init; }
 
     public ISortStrategy<T>? SortStrategy { get; init; }
     public IFilterStrategyFactory<T>? FilterFactory { get; init; }

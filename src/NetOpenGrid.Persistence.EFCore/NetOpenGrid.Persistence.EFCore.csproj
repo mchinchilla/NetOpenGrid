@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/NetOpenGrid.Application/NetOpenGrid.Application.csproj" />
+    <ProjectReference Include="../../src/NetOpenGrid.Domain/NetOpenGrid.Domain.csproj" />
+  </ItemGroup>
+</Project>

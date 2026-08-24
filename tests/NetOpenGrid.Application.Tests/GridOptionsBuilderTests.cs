@@ -94,4 +94,39 @@ public class GridOptionsBuilderTests
         Assert.Equal("32rem", custom.MinHeight);
         Assert.Equal(string.Empty, disabled.MinHeight);
     }
+
+    [Fact]
+    public void ExpressionOverload_KeepsSelectorExpression_AndBuildsValueParser()
+    {
+        var options = new GridOptionsBuilder<Person>()
+            .WithId("people")
+            .AddColumn(p => p.BirthDate)
+            .AddColumn(p => p.Salary)
+            .AddColumn(p => p.City)
+            .Build();
+
+        var birthDate = options.Columns.Single(c => c.Field == "birthDate");
+        var salary = options.Columns.Single(c => c.Field == "salary");
+        var city = options.Columns.Single(c => c.Field == "city");
+
+        Assert.NotNull(birthDate.SelectorExpression);
+        Assert.NotNull(birthDate.FilterValueParser);
+        Assert.NotNull(salary.FilterValueParser);
+        Assert.NotNull(city.FilterValueParser);
+
+        Assert.True(city.FilterValueParser!("Lima", out var parsedCity));
+        Assert.Equal("Lima", parsedCity);
+        Assert.True(salary.FilterValueParser!("1234.5", out var parsedSalary));
+        Assert.Equal(1234.5m, parsedSalary);
+    }
+
+    [Fact]
+    public void FuncOnlyColumn_HasNoSelectorExpression()
+    {
+        var options = TestGrid.Options();
+
+        var name = options.Columns.Single(c => c.Field == "name");
+        Assert.Null(name.SelectorExpression);
+        Assert.NotNull(name.FilterValueParser);
+    }
 }
