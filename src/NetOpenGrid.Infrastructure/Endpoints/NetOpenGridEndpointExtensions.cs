@@ -33,6 +33,11 @@ public static class NetOpenGridEndpointExtensions
         MapAsset(endpoints, $"{assetPrefix}/vendor/htmx.min.js", EmbeddedGridAssets.Htmx);
         MapAsset(endpoints, $"{assetPrefix}/vendor/alpine.min.js", EmbeddedGridAssets.Alpine);
 
+        foreach (var (theme, asset) in EmbeddedGridAssets.Themes)
+        {
+            MapAsset(endpoints, $"{assetPrefix}/css/netopengrid-{theme}.css", asset);
+        }
+
         endpoints.MapGet($"{prefix}/{{gridId}}/rows", async (string gridId, HttpContext http, CancellationToken cancellationToken) =>
         {
             if (http.RequestServices.GetKeyedService<IGridRuntime>(gridId) is not { } runtime)

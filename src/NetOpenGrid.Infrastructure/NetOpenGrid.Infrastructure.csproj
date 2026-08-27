@@ -1,12 +1,22 @@
 <Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <PackageId>NetOpenGrid</PackageId>
+    <Description>Server-rendered data grid for ASP.NET Core, powered by htmx, Alpine.js and Tailwind CSS. Ships its client runtime and themes inside the package.</Description>
+  </PropertyGroup>
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>
   <ItemGroup>
-    <EmbeddedResource Include="Assets\**" />
+    <EmbeddedResource Include="Assets\**" Exclude="Assets\css\**;Assets\**\*.cs" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../NetOpenGrid.Application/NetOpenGrid.Application.csproj" />
-    <ProjectReference Include="../NetOpenGrid.Domain/NetOpenGrid.Domain.csproj" />
   </ItemGroup>
+  <Target Name="CompileTailwindThemes" BeforeTargets="BeforeBuild">
+    <Exec Condition="'$(OS)' == 'Windows_NT'" Command="tools\build-themes.cmd" WorkingDirectory="$(MSBuildThisFileDirectory)../.." />
+    <Exec Condition="'$(OS)' != 'Windows_NT'" Command="./tools/build-themes.sh" WorkingDirectory="$(MSBuildThisFileDirectory)../.." />
+    <ItemGroup>
+      <EmbeddedResource Include="Assets\css\*.css" />
+    </ItemGroup>
+  </Target>
 </Project>

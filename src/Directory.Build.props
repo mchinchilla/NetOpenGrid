@@ -1,0 +1,26 @@
+<Project>
+  <Import Project="$([MSBuild]::GetPathOfFileAbove('Directory.Build.props', '$(MSBuildThisFileDirectory)../'))" />
+
+  <PropertyGroup>
+    <IsPackable>true</IsPackable>
+    <Authors>NetOpenGrid Contributors</Authors>
+    <Company>NetOpenGrid</Company>
+    <Product>NetOpenGrid</Product>
+    <Copyright>Copyright (c) NetOpenGrid Contributors</Copyright>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageProjectUrl>https://github.com/mchinchilla/NetOpenGrid</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/mchinchilla/NetOpenGrid</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageTags>grid;datagrid;aspnetcore;htmx;alpinejs;tailwind;server-rendered;table</PackageTags>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591;CS1573</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="$(MSBuildThisFileDirectory)../README.md" Pack="true" PackagePath="\" Visible="false" />
+  </ItemGroup>
+</Project>

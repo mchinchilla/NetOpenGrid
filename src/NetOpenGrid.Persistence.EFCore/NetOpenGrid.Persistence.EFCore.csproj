@@ -1,9 +1,12 @@
 <Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <PackageId>NetOpenGrid.EntityFrameworkCore</PackageId>
+    <Description>Entity Framework Core data source for NetOpenGrid, translating grid queries to IQueryable.</Description>
+  </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.EntityFrameworkCore" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../../src/NetOpenGrid.Application/NetOpenGrid.Application.csproj" />
-    <ProjectReference Include="../../src/NetOpenGrid.Domain/NetOpenGrid.Domain.csproj" />
   </ItemGroup>
 </Project>

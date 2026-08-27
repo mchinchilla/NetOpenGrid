@@ -27,6 +27,7 @@ Sin virtual DOM. Sin reflexión en el hot path. Sin compilar expresiones por req
 - [✨ Features](#-features)
 - [Stack](#-stack)
 - [Arquitectura](#-arquitectura)
+- [Instalación](#-instalación)
 - [Quickstart](#-quickstart)
 - [Workflows](#-workflows)
 - [EF Core (push-down a SQL)](#-ef-core-push-down-a-sql)
@@ -98,7 +99,7 @@ flowchart LR
 | 🖥️ Server | **ASP.NET Core** Minimal APIs | endpoints de shell + fragmento + assets embebidos |
 | ⚡ Reactividad | **HTMX 2** | `htmx.ajax` para intercambiar solo el `<tbody>` |
 | 🪶 Estado local | **Alpine.js 3** | paginación, filtros, selección, tema — sin framework |
-| 🎨 Estilos | **Tailwind CSS v4** (CLI standalone) | themes compilados a `wwwroot/css`, dark mode |
+| 🎨 Estilos | **Tailwind CSS v4** (CLI standalone) | themes compilados al ensamblado, dark mode |
 | 🗄️ Base de datos | **EF Core 10** (opcional) | push-down de filtros/orden a SQL |
 | ✅ Testing | **xUnit** + `WebApplicationFactory` | unitarias + integración HTTP end-to-end |
 
@@ -143,6 +144,100 @@ flowchart TB
 
 ---
 
+## 📦 Instalación
+
+NetOpenGrid se distribuye en cuatro paquetes. **Instala solo el primero** — los demás llegan como dependencias transitivas:
+
+| Paquete | Contenido |
+|---|---|
+| `NetOpenGrid` | Integración con ASP.NET Core: DI, endpoints, renderer. **Este es el que instalas.** |
+| `NetOpenGrid.Core` | Motor de consultas, builders y estrategias de filtrado (transitivo) |
+| `NetOpenGrid.Abstractions` | Abstracciones, modelo de columnas y de consulta (transitivo) |
+| `NetOpenGrid.EntityFrameworkCore` | Origen de datos para EF Core. Opcional, instálalo aparte |
+
+### Desde el feed local
+
+Genera los paquetes y publícalos en `./artifacts`:
+
+```bash
+./tools/pack.sh dev.1        # produce 0.1.0-dev.1
+```
+
+En el proyecto que consume, crea un `nuget.config`:
+
+```xml
+<?xml version="1.0" encoding="utf-8"?>
+<configuration>
+  <packageSources>
+    <add key="nuget.org" value="https://api.nuget.org/v3/index.json" protocolVersion="3" />
+    <add key="netopengrid-local" value="D:\NetOpenGrid\artifacts" />
+  </packageSources>
+</configuration>
+```
+
+Esta fuente local se añade junto a tus feeds existentes; no los reemplaza. Si quieres el aislamiento
+estricto que se usó para verificar estos paquetes, añade `<clear />` como primera entrada dentro de
+`<packageSources>` — pero ten en cuenta que eso descarta **todas** las fuentes heredadas, incluidas
+las corporativas o privadas que ya use tu solución.
+
+```bash
+dotnet add package NetOpenGrid --version 0.1.0-dev.1
+```
+
+> **Sobre el sufijo `-dev.N`:** NuGet cachea los paquetes por id + versión. Si vuelves a empaquetar con el mismo número de versión, el proyecto consumidor seguirá usando la copia cacheada sin avisar. Usa un sufijo distinto en cada iteración.
+
+### Uso mínimo
+
+```csharp
+using NetOpenGrid.Application.DataSources;
+using NetOpenGrid.Infrastructure;
+using NetOpenGrid.Infrastructure.Endpoints;
+
+var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddNetOpenGrid()
+    .AddGrid<Person>(
+        "people",
+        options => options
+            .WithTitle("People")
+            .AddColumn("name", p => p.Name, c => c.Header("Name").Searchable())
+            .AddColumn("email", p => p.Email, c => c.Header("Email")),
+        (_, options) => new InMemoryGridDataSource<Person>(options, people));
+
+var app = builder.Build();
+app.MapNetOpenGrid();
+app.Run();
+```
+
+No hace falta `wwwroot`, ni `UseStaticFiles()`, ni herramientas de build. El runtime JS, htmx, Alpine y el CSS de los temas van **dentro del paquete** y los sirve `MapNetOpenGrid`.
+
+### CSS propio
+
+Por defecto `CssPath` es `null` y el tema compilado se sirve desde `{AssetPrefix}/css/netopengrid-{tema}.css`. Si prefieres alojar tu propia hoja de estilos, asígnalo:
+
+```csharp
+builder.Services.AddNetOpenGrid(o =>
+{
+    o.AssetPrefix = "/_netgrid";
+    o.CssPath = "/css";          // sirve wwwroot/css/netopengrid-{tema}.css desde tu app
+    o.CssFilePrefix = "netopengrid-";
+});
+
+var app = builder.Build();
+app.UseStaticFiles();     // obligatorio en cuanto asignas CssPath: sirve tu wwwroot/css
+app.MapNetOpenGrid();
+```
+
+`CssFilePrefix` solo aplica cuando `CssPath` está asignado: no puede renombrar un recurso compilado dentro del ensamblado. `UseStaticFiles()` es **obligatorio** en cuanto asignas `CssPath` — sin él, el `<link>` generado apunta a una ruta que nadie sirve y el grid queda sin estilos. No hace falta si te quedas con el tema embebido por defecto.
+
+> **¿De dónde saco una hoja de estilos para empezar?** `MapNetOpenGrid()` mantiene la ruta embebida montada aunque asignes `CssPath` — lo único que cambia es el `<link>` que genera el renderer. Así que el tema compilado sigue siendo accesible en `{AssetPrefix}/css/netopengrid-{tema}.css`, y puedes descargarlo desde una instancia en ejecución como punto de partida para tu propio `wwwroot/css`:
+>
+> ```bash
+> curl http://localhost:5000/_netgrid/css/netopengrid-grid.css -o wwwroot/css/netopengrid-grid.css
+> ```
+
+---
+
 ## 🚀 Quickstart
 
 > Proyecto funcional de referencia: [`samples/NetOpenGrid.Example`](samples/NetOpenGrid.Example)
@@ -152,11 +247,7 @@ flowchart TB
 ```csharp
 using NetOpenGrid.Infrastructure;
 
-builder.Services.AddNetOpenGrid(o =>        // opcional: rutas de assets/css
-{
-    o.AssetPrefix = "/_netgrid";            // js + htmx + alpine servidos por el componente
-    o.CssPath = "/css";                     // dónde vive TU css compilado de themes
-})
+builder.Services.AddNetOpenGrid()           // sin config: JS + htmx + Alpine + tema, todo embebido
 .AddGrid<Employee>("employees",
     options => options
         .WithTitle("Employees")
@@ -172,15 +263,16 @@ builder.Services.AddNetOpenGrid(o =>        // opcional: rutas de assets/css
     (_, opts) => new InMemoryGridDataSource<Employee>(opts, EmployeeData.All));
 ```
 
-**2. Mapea los endpoints** (shell + fragmento + assets del componente):
+**2. Mapea los endpoints** (shell + fragmento + assets del componente, CSS del tema incluido):
 
 ```csharp
-app.UseStaticFiles();     // solo para tu css de themes
-app.MapNetOpenGrid();     // GET /netgrid/:id · /rows · /_netgrid/*
+app.MapNetOpenGrid();     // GET /netgrid/:id · /rows · /_netgrid/* (incluye /css/netopengrid-{tema}.css)
 ```
 
 **3. Abre `http://localhost:PORT/netgrid/employees`.** Eso es todo: el componente sirve su propio
-JS (Alpine + HTMX embebidos en el ensamblado) — no copias nada a `wwwroot`.
+JS y CSS (Alpine + HTMX + tema Tailwind embebidos en el ensamblado) — no hace falta `wwwroot` ni
+`UseStaticFiles()`. Para alojar tu propio CSS en vez del embebido, ver
+[CSS propio](#css-propio) más arriba.
 
 ---
 
@@ -244,7 +336,7 @@ flowchart TD
 ```mermaid
 flowchart LR
     T["themes/*.css<br/>@import tailwindcss · @source ../src"] --> CLI["tailwindcss -i -o --minify"]
-    CLI --> OUT["wwwroot/css/netopengrid-{theme}.css<br/>(Host y Example)"]
+    CLI --> OUT["src/NetOpenGrid.Infrastructure/Assets/css/<br/>netopengrid-{theme}.css → EmbeddedResource"]
     OUT --> SHELL["shell: link rel=stylesheet según options.Theme"]
     CLI -. "detecta clases dentro del C# del renderer" .- SRC["GridHtmlRenderer.cs"]
 ```
@@ -419,11 +511,11 @@ GET /netgrid/:id/rows?groupby=department,city&expand=department=Design|city=Lima
 
 | Opción | Default | Descripción |
 |---|---|---|
-| `o.AssetPrefix` | `/_netgrid` | Prefijo para `netopengrid.js` + `vendor/*` |
-| `o.CssPath` | `/css` | Dónde sirve **tu** css de themes |
-| `o.CssFilePrefix` | `netopengrid-` | Nomenclatura: `netopengrid-{theme}.css` |
+| `o.AssetPrefix` | `/_netgrid` | Prefijo para `netopengrid.js` + `vendor/*` + `css/netopengrid-{theme}.css` |
+| `o.CssPath` | `null` | Si se asigna, sirve **tu** css de themes desde esa ruta en vez del tema embebido |
+| `o.CssFilePrefix` | `netopengrid-` | Nomenclatura de tu css propio; solo aplica si `CssPath` está asignado |
 
-Caché: `Cache-Control: immutable` + `?v={sha256-12}` — cero trabajo de copiado a `wwwroot`.
+Caché: `Cache-Control: immutable` + `?v={sha256-12}` — cero trabajo de copiado a `wwwroot` con el tema embebido por defecto.
 
 ---
 
@@ -494,9 +586,14 @@ Propiedades faltantes se comportan como `null` (orden inferior, `is-empty` ✓).
 ## 🎨 Temas (Tailwind v4)
 
 ```bash
-./tools/build-themes.sh     # compila themes/*.css → wwwroot/css (Host y Example)
+./tools/build-themes.sh              # compila themes/*.css → Infrastructure/Assets/css
+./tools/build-themes.sh --strict     # falla si el CLI de tailwindcss no está en el PATH
 ```
 
+- La salida se compila **dentro del ensamblado** como `EmbeddedResource` y la sirve
+  `MapNetOpenGrid` en `{AssetPrefix}/css/netopengrid-{tema}.css`. Las apps que consumen
+  el paquete no necesitan `wwwroot` ni Tailwind. `tools/pack.sh` siempre usa `--strict`,
+  así que nunca se publica un paquete sin CSS compilado.
 - Los themes usan `@source "../src"`: **Tailwind escanea el C# del renderer** y detecta las clases
   que emite el servidor — por eso no hay CSS muerto ni safelist manual.
 - `@custom-variant dark (&:where(.dark, .dark *))` + toggle persistido en `localStorage`

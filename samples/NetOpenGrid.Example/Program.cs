@@ -62,7 +62,6 @@ builder.Services.AddNetOpenGrid()
 
 var app = builder.Build();
 
-app.UseStaticFiles();
 app.MapNetOpenGrid();
 
 app.MapGet("/", () => Results.Redirect("/netgrid/products"));

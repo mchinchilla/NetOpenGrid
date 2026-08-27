@@ -3,23 +3,29 @@ setlocal enabledelayedexpansion
 
 set "ROOT=%~dp0.."
 set "THEMES_DIR=%ROOT%\themes"
-set "OUT1=%ROOT%\src\NetOpenGrid.Host\wwwroot\css"
-set "OUT2=%ROOT%\samples\NetOpenGrid.Example\wwwroot\css"
+set "OUT=%ROOT%\src\NetOpenGrid.Infrastructure\Assets\css"
 
-if not exist "%OUT1%" mkdir "%OUT1%"
-if not exist "%OUT2%" mkdir "%OUT2%"
+set "STRICT=0"
+if /i "%~1"=="--strict" set "STRICT=1"
+
+if not exist "%OUT%" mkdir "%OUT%"
 
 where tailwindcss >nul 2>nul
 if errorlevel 1 (
-  echo [netopengrid] WARNING: 'tailwindcss' CLI not found in PATH; skipping theme compilation. 1>&2
+  if "%STRICT%"=="1" (
+    echo [netopengrid] ERROR: 'tailwindcss' CLI not found in PATH. Refusing to package without freshly compiled themes. 1>&2
+    exit /b 1
+  )
+  echo [netopengrid] WARNING: 'tailwindcss' CLI not found in PATH; keeping the committed theme CSS. 1>&2
   exit /b 0
 )
+
+if exist "%OUT%\netopengrid-*.css" del /q "%OUT%\netopengrid-*.css"
 
 for %%F in ("%THEMES_DIR%\*.css") do (
   set "name=%%~nF"
   echo [netopengrid] Compiling theme '!name!'...
-  tailwindcss -i "%%F" -o "%OUT1%\netopengrid-!name!.css" --minify --silent || exit /b 1
-  tailwindcss -i "%%F" -o "%OUT2%\netopengrid-!name!.css" --minify --silent || exit /b 1
+  tailwindcss -i "%%F" -o "%OUT%\netopengrid-!name!.css" --minify --silent || exit /b 1
 )
 
-echo [netopengrid] Themes written to %OUT1% and %OUT2%
+echo [netopengrid] Themes written to %OUT%

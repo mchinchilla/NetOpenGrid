@@ -36,7 +36,6 @@ builder.Services.AddNetOpenGrid(
     o =>
     {
         o.AssetPrefix = "/_netgrid";
-        o.CssPath = "/css";
     },
     loc => loc.UseCulture("es"))
     .AddGrid<Employee>("employees", options => options
@@ -65,7 +64,6 @@ builder.Services.AddNetOpenGrid(
 
 var app = builder.Build();
 
-app.UseStaticFiles();
 app.MapNetOpenGrid();
 
 app.MapGet("/", () => Results.Redirect("/netgrid/employees"));

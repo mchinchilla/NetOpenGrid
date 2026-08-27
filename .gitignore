@@ -69,6 +69,7 @@ BenchmarkDotNet.Artifacts/
 # .NET Core
 project.lock.json
 project.fragment.lock.json
+# Also covers NuGet packages produced by tools/pack
 artifacts/
 
 # ASP.NET Scaffolding

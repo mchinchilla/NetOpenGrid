@@ -1,10 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../NetOpenGrid.Infrastructure/NetOpenGrid.Infrastructure.csproj" />
   </ItemGroup>
-
-  <Target Name="CompileTailwindThemes" BeforeTargets="Build">
-    <Exec Condition="'$(OS)' == 'Windows_NT'" Command="tools\build-themes.cmd" WorkingDirectory="$(MSBuildThisFileDirectory)../.." />
-    <Exec Condition="'$(OS)' != 'Windows_NT'" Command="./tools/build-themes.sh" WorkingDirectory="$(MSBuildThisFileDirectory)../.." />
-  </Target>
 </Project>

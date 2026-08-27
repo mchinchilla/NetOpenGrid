@@ -240,11 +240,28 @@ public sealed class GridHtmlRenderer<TItem>
         w.Write("</title>");
         w.Write(ThemeBootScript);
         w.Write("<link rel=\"stylesheet\" href=\"");
-        w.Write(_assetOptions.NormalizedCssPath);
-        w.Write('/');
-        w.Write(_assetOptions.CssFilePrefix);
-        AppendEncoded(w, _options.Theme);
-        w.Write(".css\">");
+        if (_assetOptions.NormalizedCssPath is { } cssPath)
+        {
+            w.Write(cssPath);
+            w.Write('/');
+            w.Write(_assetOptions.CssFilePrefix);
+            AppendEncoded(w, _options.Theme);
+            w.Write(".css");
+        }
+        else
+        {
+            w.Write(prefix);
+            w.Write("/css/netopengrid-");
+            AppendEncoded(w, _options.Theme);
+            w.Write(".css");
+
+            if (Assets.EmbeddedGridAssets.Themes.TryGetValue(_options.Theme, out var themeAsset))
+            {
+                w.Write("?v=");
+                w.Write(themeAsset.Version);
+            }
+        }
+        w.Write("\">");
         w.Write("<style>[x-cloak]{display:none!important}</style>");
         w.Write("<script src=\"");
         w.Write(prefix);

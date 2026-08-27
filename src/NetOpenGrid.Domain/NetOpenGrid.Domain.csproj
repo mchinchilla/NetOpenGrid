@@ -1,2 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <PackageId>NetOpenGrid.Abstractions</PackageId>
+    <Description>Core abstractions, column and query models for NetOpenGrid. Referenced transitively; install NetOpenGrid instead.</Description>
+  </PropertyGroup>
 </Project>
