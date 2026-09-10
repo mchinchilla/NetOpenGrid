@@ -51,4 +51,7 @@ public sealed class GridColumn<T>
     public ColumnDataType DataType { get; init; } = ColumnDataType.Unknown;
     public ColumnAlign Align { get; init; } = ColumnAlign.Start;
     public string? WidthCss { get; init; }
+
+    /// <summary>Breakpoint below which this column is hidden (both header and cell). Default: never hidden.</summary>
+    public ResponsiveBreakpoint HideBelow { get; init; } = ResponsiveBreakpoint.None;
 }

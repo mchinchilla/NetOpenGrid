@@ -4,6 +4,7 @@
 
   const THEME_KEY = 'netgrid:theme';
   const MAX_SEARCH = 200;
+  const PREFIX = () => window.__NETGRID__?.prefix || '/netgrid';
 
   const isEmptyOp = (op) => op === 'is-empty' || op === 'is-not-empty';
 
@@ -99,7 +100,7 @@
     window.history.replaceState(null, '', `${window.location.pathname}${query ? '?' + query : ''}`);
     state.loading = true;
     try {
-      await htmx.ajax('GET', `/netgrid/${state.id}/rows${query ? '?' + query : ''}`, {
+      await htmx.ajax('GET', `${PREFIX()}/${state.id}/rows${query ? '?' + query : ''}`, {
         target: `#${state.id}-body`,
         swap: 'innerHTML'
       });
@@ -214,7 +215,7 @@
 
         document.body.addEventListener('htmx:afterRequest', (event) => {
           const config = event.detail?.requestConfig;
-          if (!config?.path || !config.path.includes(`/netgrid/${id}/rows`)) return;
+          if (!config?.path || !config.path.includes(`${PREFIX()}/${id}/rows`)) return;
           const xhr = event.detail.xhr;
           if (!xhr) return;
 
@@ -424,7 +425,7 @@
       exportCsv() {
         const params = toParams(this, null);
         const query = params.toString();
-        window.location.href = `/netgrid/${this.id}/export${query ? '?' + query : ''}`;
+        window.location.href = `${PREFIX()}/${this.id}/export${query ? '?' + query : ''}`;
       },
 
       async refresh() {
@@ -493,7 +494,7 @@
         const params = toParams(this, field);
         const query = params.toString();
         try {
-          const response = await fetch(`/netgrid/${this.id}/values?field=${encodeURIComponent(field)}${query ? '&' + query : ''}`);
+          const response = await fetch(`${PREFIX()}/${this.id}/values?field=${encodeURIComponent(field)}${query ? '&' + query : ''}`);
           if (!response.ok) throw new Error(`HTTP ${response.status}`);
           const data = await response.json();
 

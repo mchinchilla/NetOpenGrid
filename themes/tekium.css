@@ -1,0 +1,182 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@source "../src";
+
+@theme {
+  /* Brand scale mirrors TekiumERP's accent (Tailwind "blue"):
+     --theme-accent / --theme-accent-hover in wwwroot/css/themes/light.css (#3b82f6 / #2563eb),
+     and the blue-500/blue-600/blue-400 literals used throughout Views/Providers/Index.cshtml
+     (border-l-blue-500 header accent, focus:ring-blue-400, pagination bg-blue-600). */
+  --color-brand-50: #eff6ff;
+  --color-brand-100: #dbeafe;
+  --color-brand-200: #bfdbfe;
+  --color-brand-300: #93c5fd;
+  --color-brand-400: #60a5fa;
+  --color-brand-500: #3b82f6;
+  --color-brand-600: #2563eb;
+  --color-brand-700: #1d4ed8;
+  --color-brand-800: #1e40af;
+  --color-brand-900: #1e3a8a;
+
+  /* GridHtmlRenderer emits literal `neutral-*` utilities (bg-neutral-50 thead,
+     border-neutral-200/100 header/row dividers, text-neutral-600/500 header/muted text).
+     Redefining the `neutral` scale to Tailwind's "gray" values makes those literals
+     resolve to the exact colors TekiumERP already uses (wwwroot/css/themes/light.css
+     --theme-bg #f9fafb, --theme-border #e5e7eb, --theme-text #111827, --theme-text-secondary
+     #374151, --theme-text-muted #6b7280; and the bg-gray-50/border-gray-200/text-gray-600
+     header + divide-gray-100 rows in Views/Providers/Index.cshtml) without touching the
+     renderer's class strings. */
+  --color-neutral-50: #f9fafb;
+  --color-neutral-100: #f3f4f6;
+  --color-neutral-200: #e5e7eb;
+  --color-neutral-300: #d1d5db;
+  --color-neutral-400: #9ca3af;
+  --color-neutral-500: #6b7280;
+  --color-neutral-600: #4b5563;
+  --color-neutral-700: #374151;
+  --color-neutral-800: #1f2937;
+  --color-neutral-900: #111827;
+  --color-neutral-950: #030712;
+
+  /* TekiumERP sets body font-family directly in base/typography.css to the system stack
+     (no custom Tailwind font token) — mirrored here so a standalone-rendered grid page
+     matches instead of falling back to Tailwind's default font-sans stack. */
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+@layer components {
+  .input-base {
+    @apply w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 shadow-sm transition placeholder:text-neutral-400 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/30 focus:outline-none dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100 dark:placeholder:text-neutral-500;
+  }
+
+  .btn-icon {
+    @apply inline-flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-lg border border-neutral-200 bg-white text-neutral-600 shadow-sm transition hover:bg-neutral-50 hover:text-neutral-900 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-300 dark:hover:bg-neutral-700 dark:hover:text-white;
+  }
+
+  .btn-ghost {
+    @apply cursor-pointer rounded-lg border border-neutral-200 bg-white px-3 py-1.5 text-sm font-medium text-neutral-700 shadow-sm transition hover:bg-neutral-100 disabled:cursor-not-allowed disabled:opacity-40 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-200 dark:hover:bg-neutral-700;
+  }
+
+  .btn-ghost-sm {
+    @apply cursor-pointer rounded-lg border border-neutral-200 px-3 py-1.5 text-sm font-medium text-neutral-600 transition hover:bg-neutral-100 dark:border-neutral-600 dark:text-neutral-300 dark:hover:bg-neutral-800;
+  }
+
+  .btn-primary-sm {
+    @apply cursor-pointer rounded-lg bg-brand-600 px-3 py-1.5 text-sm font-medium text-white shadow-sm transition hover:bg-brand-500 disabled:cursor-not-allowed disabled:opacity-40;
+  }
+
+  .chip {
+    @apply inline-flex cursor-pointer items-center gap-1.5 rounded-full border border-brand-200 bg-brand-50 px-3 py-1 text-xs font-medium text-brand-700 transition hover:bg-brand-100 dark:border-brand-800 dark:bg-brand-900/40 dark:text-brand-300 dark:hover:bg-brand-900/70;
+  }
+
+  .badge {
+    @apply inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium;
+  }
+
+  .badge-success {
+    @apply bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300;
+  }
+
+  .badge-muted {
+    @apply bg-neutral-200 text-neutral-600 dark:bg-neutral-700 dark:text-neutral-300;
+  }
+
+  .badge-pending {
+    @apply bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300;
+  }
+
+  .badge-shipped {
+    @apply bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300;
+  }
+
+  .badge-delivered {
+    @apply bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300;
+  }
+
+  .badge-cancelled {
+    @apply bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300;
+  }
+}
+
+/*
+ * Header-cell typography, deliberately OUTSIDE any @layer block.
+ *
+ * GridHtmlRenderer.cs writes `font-medium` directly on every <th>
+ * (AppendTableHead, ~line 510) alongside `text-neutral-600` — it never sets a
+ * text-size utility on the <th> itself (font-size 14px only arrives by
+ * inheritance from the ancestor `<table class="min-w-full text-sm">`).
+ * TekiumERP's own list-page headers (Views/Providers/Index.cshtml <th>, and
+ * .data-table thead th in wwwroot/css/components/tables.css) use
+ * `text-xs font-semibold uppercase tracking-wider` instead.
+ *
+ * A rule in `@layer components` CANNOT win the font-weight fight against
+ * `.font-medium`: this file's own compiled output declares
+ * `@layer theme, base, components, utilities;`, so `utilities` outranks
+ * `components` in the cascade regardless of selector specificity — verified
+ * by compiling this theme and confirming `.font-medium{font-weight:500}`
+ * sits inside `@layer utilities`, while an equivalent rule placed inside
+ * `@layer components` (tried first) sits in the lower-priority layer and
+ * loses. font-size/line-height/text-transform/letter-spacing have no
+ * competing declaration directly on <th>, so those would have applied even
+ * from inside `@layer components` — only font-weight was actually broken.
+ *
+ * Per the CSS Cascade Layers spec, declarations outside any @layer belong to
+ * an implicit final layer that always outranks every named layer, so this
+ * (still layer-scoped by selector, not !important) reliably wins over
+ * `font-medium` without touching GridHtmlRenderer.cs — whose classes are
+ * shared by the `grid` and `midnight` themes and every other consumer of
+ * this library.
+ *
+ * `[data-netgrid-card]` is the boolean attribute AppendTableCard writes on
+ * the grid's own wrapper div, so this cannot match a <table> anywhere else
+ * on a TekiumERP page.
+ */
+[data-netgrid-card] thead th {
+  font-size: 0.75rem;
+  line-height: 1rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+/*
+ * Filter-popover reset — undoes the two inheritable properties from the
+ * header rule above for one specific descendant.
+ *
+ * AppendFilterPopover (GridHtmlRenderer.cs:584-612) writes the Excel-style
+ * filter popover as `<div data-popover="{field}" class="absolute z-30 ...">`
+ * DOM-nested INSIDE the same <th> the header rule targets (AppendTableHead
+ * calls AppendFilterPopover at line ~573, before writing `</th>`) — it only
+ * *looks* detached because it's `absolute`ly positioned; `position: absolute`
+ * changes layout, not the DOM tree, so CSS inheritance still flows normally
+ * from <th> down into it. `text-transform` and `letter-spacing` are both
+ * inheritable properties, and nothing inside the popover
+ * (AppendValueListBody / AppendOperatorBody: the search <input>, the
+ * "Seleccionar todo" <label>, the value/count list <span>s, the operator
+ * <select>/<option>s, the value <input>, and the Limpiar/Aplicar <button>s)
+ * sets its own text-transform or letter-spacing — so without this reset all
+ * of it would render uppercase with 0.05em tracking.
+ *
+ * Resets BOTH properties on purpose: resetting only `text-transform` would
+ * leave the 0.05em tracking applied, which reads as subtly (not obviously)
+ * broken and is harder to notice/diagnose later.
+ *
+ * Kept unlayered like the rule above it. Nothing else in this stylesheet, in
+ * any layer, declares text-transform/letter-spacing on `[data-popover]` or
+ * its descendants, so this would in fact win even from inside
+ * `@layer components` too (verified below) — staying unlayered just keeps
+ * this rule visibly paired with the header rule it exists to undo, and
+ * removes any doubt about which one wins.
+ *
+ * `[data-popover]` is the attribute AppendFilterPopover writes on the
+ * popover's own root <div> (unique to this element, one per filterable
+ * column); scoping under `[data-netgrid-card]` matches the header rule's
+ * convention and keeps this from ever matching outside the grid's own
+ * markup.
+ */
+[data-netgrid-card] [data-popover] {
+  text-transform: none;
+  letter-spacing: normal;
+}

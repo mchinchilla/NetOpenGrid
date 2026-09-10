@@ -205,9 +205,35 @@ public sealed class GridHtmlRenderer<TItem>
         return merged;
     }
 
-    public ValueTask<string> RenderShellAsync(GridExecutionResult<TItem> initialResult, IReadOnlyList<GridColumn<TItem>>? columnOrder = null, CancellationToken cancellationToken = default)
+    /// <summary>
+    /// Renders just the grid: root + state script, no document scaffolding. Meant to be
+    /// dropped inside a host page's own layout (the host renders <see cref="GridAssetTags"/>
+    /// once in its own &lt;head&gt; instead).
+    /// </summary>
+    public ValueTask<string> RenderFragmentAsync(
+        GridExecutionResult<TItem> initialResult,
+        IReadOnlyList<GridColumn<TItem>>? columnOrder = null,
+        CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
+
+        var sb = _stringBuilderPool.Get();
+        try
+        {
+            using var writer = new StringWriter(sb);
+            AppendGridRoot(writer, initialResult, ResolveColumns(columnOrder));
+            AppendStateScript(writer, initialResult.Page);
+            return ValueTask.FromResult(sb.ToString());
+        }
+        finally
+        {
+            _stringBuilderPool.Return(sb.Clear());
+        }
+    }
+
+    public async ValueTask<string> RenderShellAsync(GridExecutionResult<TItem> initialResult, IReadOnlyList<GridColumn<TItem>>? columnOrder = null, CancellationToken cancellationToken = default)
+    {
+        var fragment = await RenderFragmentAsync(initialResult, columnOrder, cancellationToken);
 
         var sb = _stringBuilderPool.Get();
         try
@@ -216,12 +242,10 @@ public sealed class GridHtmlRenderer<TItem>
             AppendDocumentStart(writer);
             AppendSiteHeader(writer);
             writer.Write("<main class=\"mx-auto max-w-7xl px-4 py-8\">");
-            AppendGridRoot(writer, initialResult, ResolveColumns(columnOrder));
+            writer.Write(fragment);
             writer.Write("</main>");
-            AppendStateScript(writer, initialResult.Page);
             writer.Write("</body></html>");
-
-            return ValueTask.FromResult(sb.ToString());
+            return sb.ToString();
         }
         finally
         {
@@ -472,11 +496,15 @@ public sealed class GridHtmlRenderer<TItem>
             {
                 w.Write("\" data-pin=\"");
                 AppendEncoded(w, column.Field);
-                w.Write("\" style=\"left:0\" class=\"sticky z-30 relative border-r border-neutral-200 bg-neutral-50 dark:border-neutral-800 dark:bg-neutral-800/60 ");
+                w.Write("\" style=\"left:0\" class=\"");
+                w.Write(ResponsiveClass(column.HideBelow));
+                w.Write("sticky z-30 relative border-r border-neutral-200 bg-neutral-50 dark:border-neutral-800 dark:bg-neutral-800/60 ");
             }
             else
             {
-                w.Write("\" class=\"relative ");
+                w.Write("\" class=\"");
+                w.Write(ResponsiveClass(column.HideBelow));
+                w.Write("relative ");
             }
 
             w.Write("px-4 py-3 font-medium text-neutral-600 select-none dark:text-neutral-300 ");
@@ -683,7 +711,9 @@ public sealed class GridHtmlRenderer<TItem>
         w.Write("<div x-show=\"selected.length > 0\" x-cloak x-transition ");
         w.Write("class=\"fixed bottom-6 left-1/2 z-40 flex -translate-x-1/2 items-center gap-4 rounded-full bg-neutral-900 px-5 py-2.5 text-white shadow-lg dark:bg-white dark:text-neutral-900\">");
         w.Write("<span class=\"text-sm font-medium\" x-text=\"selectedLabel\"></span>");
-        w.Write("<form method=\"post\" :action=\"'/netgrid/' + id + '/export'\" class=\"contents\">");
+        w.Write("<form method=\"post\" :action=\"");
+        AppendJsQuoted(w, _assetOptions.RoutePrefix);
+        w.Write(" + '/' + id + '/export'\" class=\"contents\">");
         w.Write("<input type=\"hidden\" name=\"ids\" :value=\"selected.join(',')\">");
         w.Write("<button type=\"submit\" class=\"btn-primary-sm\">");
         w.Write(L("select.export"));
@@ -756,11 +786,14 @@ public sealed class GridHtmlRenderer<TItem>
             {
                 w.Write(" data-pin=\"");
                 AppendEncoded(w, column.Field);
-                w.Write("\" style=\"left:0\" class=\"sticky z-10 border-r border-neutral-100 bg-white hover:bg-brand-50/40 dark:border-neutral-800/60 dark:bg-neutral-900 dark:hover:bg-white/[0.04]");
+                w.Write("\" style=\"left:0\" class=\"");
+                w.Write(ResponsiveClass(column.HideBelow));
+                w.Write("sticky z-10 border-r border-neutral-100 bg-white hover:bg-brand-50/40 dark:border-neutral-800/60 dark:bg-neutral-900 dark:hover:bg-white/[0.04]");
             }
             else
             {
                 w.Write(" class=\"");
+                w.Write(ResponsiveClass(column.HideBelow));
             }
 
             w.Write(" whitespace-nowrap px-4 py-2.5 align-middle ");
@@ -827,7 +860,15 @@ public sealed class GridHtmlRenderer<TItem>
         w.Write("];");
         w.Write("__NETGRID__.locale=");
         w.Write(JsonSerializer.Serialize(_locale.Strings, JsonOptions));
-        w.Write(";</script>");
+        w.Write(';');
+
+        // Published so the client (netopengrid.js) builds its fetch/navigation URLs from the
+        // server's actual data-endpoint prefix instead of a hardcoded "/netgrid" literal.
+        w.Write("Object.assign(__NETGRID__,{\"prefix\":");
+        AppendJsonString(w, _assetOptions.RoutePrefix);
+        w.Write("});");
+
+        w.Write("</script>");
     }
 
     private bool IsFirstFilterable(GridColumn<TItem> column)
@@ -848,6 +889,20 @@ public sealed class GridHtmlRenderer<TItem>
         ColumnAlign.Center => "text-center",
         ColumnAlign.End => "text-right",
         _ => "text-left"
+    };
+
+    /// <summary>
+    /// LITERAL class strings, one per breakpoint. Tailwind scans this file; a composed
+    /// string (e.g. $"hidden {bp}:table-cell") would be invisible to the scan and the
+    /// column would silently render unstyled.
+    /// </summary>
+    private static string ResponsiveClass(ResponsiveBreakpoint breakpoint) => breakpoint switch
+    {
+        ResponsiveBreakpoint.Sm => "hidden sm:table-cell ",
+        ResponsiveBreakpoint.Md => "hidden md:table-cell ",
+        ResponsiveBreakpoint.Lg => "hidden lg:table-cell ",
+        ResponsiveBreakpoint.Xl => "hidden xl:table-cell ",
+        _ => string.Empty,
     };
 
     private static void AppendEncoded(TextWriter w, string? value)

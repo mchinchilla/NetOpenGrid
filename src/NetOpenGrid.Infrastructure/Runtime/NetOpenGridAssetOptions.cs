@@ -11,6 +11,14 @@ public sealed class NetOpenGridAssetOptions
     public string AssetPrefix { get; set; } = "/_netgrid";
 
     /// <summary>
+    /// The data-endpoint route prefix (<see cref="NetOpenGrid.Infrastructure.Endpoints.NetOpenGridEndpointOptions.Prefix"/>),
+    /// published to the client so <c>netopengrid.js</c> builds its fetch/navigation URLs from it
+    /// instead of the hardcoded default. <c>MapNetOpenGrid</c> is the single place that knows both
+    /// values and keeps them in sync; it assigns this before mapping any endpoint.
+    /// </summary>
+    public string RoutePrefix { get; set; } = "/netgrid";
+
+    /// <summary>
     /// When <c>null</c> (the default) the theme compiled into the assembly is served from
     /// <see cref="AssetPrefix"/>/css, so the host application needs no stylesheet of its own.
     /// Set this to serve your own stylesheet from the host application instead

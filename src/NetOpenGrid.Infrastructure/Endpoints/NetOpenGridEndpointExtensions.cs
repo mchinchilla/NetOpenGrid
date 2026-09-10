@@ -16,7 +16,7 @@ public sealed class NetOpenGridEndpointOptions
 
 public static class NetOpenGridEndpointExtensions
 {
-    public static IEndpointRouteBuilder MapNetOpenGrid(
+    public static RouteGroupBuilder MapNetOpenGrid(
         this IEndpointRouteBuilder endpoints,
         Action<NetOpenGridEndpointOptions>? configure = null)
     {
@@ -27,8 +27,10 @@ public static class NetOpenGridEndpointExtensions
 
         var assetOptions = endpoints.ServiceProvider.GetService<NetOpenGridAssetOptions>() ?? new NetOpenGridAssetOptions();
         var prefix = options.Prefix.TrimEnd('/');
+        assetOptions.RoutePrefix = prefix;
         var assetPrefix = assetOptions.NormalizedAssetPrefix;
 
+        // Assets stay anonymous and outside the returned group.
         MapAsset(endpoints, $"{assetPrefix}/netopengrid.js", EmbeddedGridAssets.ClientRuntime);
         MapAsset(endpoints, $"{assetPrefix}/vendor/htmx.min.js", EmbeddedGridAssets.Htmx);
         MapAsset(endpoints, $"{assetPrefix}/vendor/alpine.min.js", EmbeddedGridAssets.Alpine);
@@ -38,7 +40,9 @@ public static class NetOpenGridEndpointExtensions
             MapAsset(endpoints, $"{assetPrefix}/css/netopengrid-{theme}.css", asset);
         }
 
-        endpoints.MapGet($"{prefix}/{{gridId}}/rows", async (string gridId, HttpContext http, CancellationToken cancellationToken) =>
+        var data = endpoints.MapGroup(prefix);
+
+        data.MapGet("/{gridId}/rows", async (string gridId, HttpContext http, CancellationToken cancellationToken) =>
         {
             if (http.RequestServices.GetKeyedService<IGridRuntime>(gridId) is not { } runtime)
             {
@@ -51,7 +55,7 @@ public static class NetOpenGridEndpointExtensions
             return Results.Text(response.Html, "text/html; charset=utf-8");
         });
 
-        endpoints.MapGet($"{prefix}/{{gridId}}/values", async (string gridId, HttpContext http, CancellationToken cancellationToken) =>
+        data.MapGet("/{gridId}/values", async (string gridId, HttpContext http, CancellationToken cancellationToken) =>
         {
             if (http.RequestServices.GetKeyedService<IGridRuntime>(gridId) is not { } runtime)
             {
@@ -65,7 +69,7 @@ public static class NetOpenGridEndpointExtensions
             return Results.Content(json, "application/json; charset=utf-8");
         });
 
-        endpoints.MapGet($"{prefix}/{{gridId}}/export", async (string gridId, HttpContext http, CancellationToken cancellationToken) =>
+        data.MapGet("/{gridId}/export", async (string gridId, HttpContext http, CancellationToken cancellationToken) =>
         {
             if (http.RequestServices.GetKeyedService<IGridRuntime>(gridId) is not { } runtime)
             {
@@ -81,7 +85,7 @@ public static class NetOpenGridEndpointExtensions
                 fileDownloadName: fileName);
         });
 
-        endpoints.MapGet($"{prefix}/{{gridId}}", async (string gridId, HttpContext http, CancellationToken cancellationToken) =>
+        data.MapGet("/{gridId}", async (string gridId, HttpContext http, CancellationToken cancellationToken) =>
         {
             if (http.RequestServices.GetKeyedService<IGridRuntime>(gridId) is not { } runtime)
             {
@@ -92,7 +96,7 @@ public static class NetOpenGridEndpointExtensions
             return Results.Text(html, "text/html; charset=utf-8");
         });
 
-        return endpoints;
+        return data;
     }
 
     private static void MapAsset(IEndpointRouteBuilder endpoints, string pattern, EmbeddedAsset asset)

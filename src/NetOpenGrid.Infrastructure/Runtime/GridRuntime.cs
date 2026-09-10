@@ -171,4 +171,11 @@ public sealed class GridRuntime<TItem> : IGridRuntime
         var result = await new GridQueryEngine<TItem>(_dataSource).ExecuteAsync(normalization.Query, cancellationToken);
         return await _renderer.RenderShellAsync(result, ResolveColumnOrder(values), cancellationToken);
     }
+
+    public async ValueTask<string> RenderFragmentAsync(GridRequestValues values, CancellationToken cancellationToken = default)
+    {
+        var normalization = GridRequestParser.Parse(values, _options);
+        var result = await new GridQueryEngine<TItem>(_dataSource).ExecuteAsync(normalization.Query, cancellationToken);
+        return await _renderer.RenderFragmentAsync(result, ResolveColumnOrder(values), cancellationToken);
+    }
 }

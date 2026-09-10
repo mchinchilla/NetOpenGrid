@@ -32,6 +32,7 @@ public sealed class GridColumnBuilder<TSource, TKey>
     private ColumnAlign _align = ColumnAlign.Start;
     private string? _widthCss;
     private ColumnDataType? _dataType;
+    private ResponsiveBreakpoint _hideBelow = ResponsiveBreakpoint.None;
 
     internal GridColumnBuilder(string field, Func<TSource, TKey> selector) : this(field, selector, null)
     {
@@ -176,6 +177,13 @@ public sealed class GridColumnBuilder<TSource, TKey>
         return this;
     }
 
+    /// <summary>Hides this column below the given viewport breakpoint (header and cell together).</summary>
+    public GridColumnBuilder<TSource, TKey> HideBelow(ResponsiveBreakpoint breakpoint)
+    {
+        _hideBelow = breakpoint;
+        return this;
+    }
+
     internal GridColumn<TSource> Build()
     {
         var dataType = _dataType ?? InferDataType();
@@ -223,7 +231,8 @@ public sealed class GridColumnBuilder<TSource, TKey>
             IsPinned = _pinned,
             DataType = dataType,
             Align = _align,
-            WidthCss = _widthCss
+            WidthCss = _widthCss,
+            HideBelow = _hideBelow
         };
     }
 
