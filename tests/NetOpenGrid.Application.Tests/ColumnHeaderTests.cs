@@ -29,11 +29,11 @@ public class ColumnHeaderTests
     [Theory]
     [InlineData("")]
     [InlineData("   ")]
-    public void Without_a_header_the_label_falls_back_to_the_field_name(string header)
+    public void Without_a_header_the_label_falls_back_to_the_humanized_field(string header)
     {
         var column = Column(c => c.Header(header));
 
-        Assert.Equal("actions", column.Label);
+        Assert.Equal("Actions", column.Label);
     }
 
     [Fact]
@@ -73,7 +73,7 @@ public class ColumnHeaderTests
     {
         var column = Column(_ => { });
 
-        Assert.Equal("actions", column.Header);
-        Assert.Equal("actions", column.Label);
+        Assert.Equal("Actions", column.Header);
+        Assert.Equal("Actions", column.Label);
     }
 }
