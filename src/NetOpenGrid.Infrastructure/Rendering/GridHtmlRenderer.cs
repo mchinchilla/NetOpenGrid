@@ -50,6 +50,7 @@ public sealed class GridHtmlRenderer<TItem>
     private const string ThemeBootScript =
         "<script>(function(){try{var t=localStorage.getItem('netgrid:theme');var d=t?t==='dark':window.matchMedia('(prefers-color-scheme: dark)').matches;if(d){document.documentElement.classList.add('dark');}}catch(e){}})();</script>";
 
+
     private readonly GridOptions<TItem> _options;
     private readonly NetOpenGridAssetOptions _assetOptions;
     private readonly NetOpenGridLocalizationOptions _locale;
@@ -205,7 +206,12 @@ public sealed class GridHtmlRenderer<TItem>
         return merged;
     }
 
-    public ValueTask<string> RenderShellAsync(GridExecutionResult<TItem> initialResult, IReadOnlyList<GridColumn<TItem>>? columnOrder = null, CancellationToken cancellationToken = default)
+    /// <param name="embedded">
+    /// El grid se pinta dentro de un iframe en otra página. Entonces sobra su propio cromo: el
+    /// fondo de página, el ancho máximo y el relleno los pone ya la página anfitriona, y
+    /// repetirlos deja la tabla encajonada y pequeña.
+    /// </param>
+    public ValueTask<string> RenderShellAsync(GridExecutionResult<TItem> initialResult, IReadOnlyList<GridColumn<TItem>>? columnOrder = null, bool embedded = false, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
@@ -213,9 +219,15 @@ public sealed class GridHtmlRenderer<TItem>
         try
         {
             using var writer = new StringWriter(sb);
-            AppendDocumentStart(writer);
-            AppendSiteHeader(writer);
-            writer.Write("<main class=\"mx-auto max-w-7xl px-4 py-8\">");
+            AppendDocumentStart(writer, embedded);
+            if (!embedded)
+            {
+                AppendSiteHeader(writer);
+            }
+
+            writer.Write(embedded
+                ? "<main>"
+                : "<main class=\"mx-auto max-w-7xl px-4 py-8\">");
             AppendGridRoot(writer, initialResult, ResolveColumns(columnOrder));
             writer.Write("</main>");
             AppendStateScript(writer, initialResult.Page);
@@ -229,7 +241,7 @@ public sealed class GridHtmlRenderer<TItem>
         }
     }
 
-    private void AppendDocumentStart(TextWriter w)
+    private void AppendDocumentStart(TextWriter w, bool embedded)
     {
         var prefix = _assetOptions.NormalizedAssetPrefix;
 
@@ -246,6 +258,11 @@ public sealed class GridHtmlRenderer<TItem>
         AppendEncoded(w, _options.Theme);
         w.Write(".css\">");
         w.Write("<style>[x-cloak]{display:none!important}</style>");
+        if (embedded)
+        {
+            w.Write("<style>html,body{background:transparent!important;margin:0}</style>");
+        }
+
         w.Write("<script src=\"");
         w.Write(prefix);
         w.Write("/netopengrid.js?v=");
@@ -261,7 +278,9 @@ public sealed class GridHtmlRenderer<TItem>
         w.Write("/vendor/alpine.min.js?v=");
         w.Write(Assets.EmbeddedGridAssets.Alpine.Version);
         w.Write("\" defer></script>");
-        w.Write("</head><body class=\"min-h-screen bg-neutral-100 text-neutral-900 antialiased dark:bg-neutral-950 dark:text-neutral-100\">");
+        w.Write(embedded
+            ? "</head><body class=\"text-neutral-900 antialiased dark:text-neutral-100\">"
+            : "</head><body class=\"min-h-screen bg-neutral-100 text-neutral-900 antialiased dark:bg-neutral-950 dark:text-neutral-100\">");
     }
 
     private void AppendSiteHeader(TextWriter w)
@@ -351,7 +370,7 @@ public sealed class GridHtmlRenderer<TItem>
             w.Write("<option value=\"");
             AppendEncoded(w, column.Field);
             w.Write("\">");
-            AppendEncoded(w, column.Header);
+            AppendEncoded(w, column.Label);
             w.Write("</option>");
         }
 
@@ -505,7 +524,7 @@ public sealed class GridHtmlRenderer<TItem>
                 w.Write(") ? 'text-brand-600 dark:text-brand-400' : 'text-neutral-400'\" @click=\"openFilter(");
                 AppendJsQuoted(w, column.Field);
                 w.Write(", $event)\" aria-label=\"");
-                w.Write(L("filter.aria").Replace("{field}", column.Header));
+                w.Write(L("filter.aria").Replace("{field}", column.Label));
                 w.Write("\">");
                 w.Write(FunnelIcon);
                 w.Write("</button>");
@@ -516,7 +535,7 @@ public sealed class GridHtmlRenderer<TItem>
             w.Write(") ? 'text-brand-600 dark:text-brand-400' : 'text-neutral-300 hover:text-neutral-500 dark:text-neutral-600 dark:hover:text-neutral-400'\" @click=\"togglePin(");
             AppendJsQuoted(w, column.Field);
             w.Write(")\" aria-label=\"");
-            w.Write(L("pin.aria").Replace("{field}", column.Header));
+            w.Write(L("pin.aria").Replace("{field}", column.Label));
             w.Write("\">");
             w.Write(PinIcon);
             w.Write("</button>");
@@ -797,7 +816,7 @@ public sealed class GridHtmlRenderer<TItem>
             w.Write("{\"field\":");
             AppendJsonString(w, _visibleColumns[i].Field);
             w.Write(",\"header\":");
-            AppendJsonString(w, _visibleColumns[i].Header);
+            AppendJsonString(w, _visibleColumns[i].Label);
             w.Write(",\"flipX\":\"");
             w.Write(IsFirstFilterable(_visibleColumns[i]) ? "left" : "right");
             w.Write("\",\"mode\":\"");

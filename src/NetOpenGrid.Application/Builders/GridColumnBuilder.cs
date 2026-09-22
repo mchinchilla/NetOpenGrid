@@ -18,6 +18,7 @@ public sealed class GridColumnBuilder<TSource, TKey>
     private Func<TSource, TKey> _selector;
     private Expression<Func<TSource, TKey>>? _selectorExpression;
     private string? _header;
+    private string? _defaultHeader;
     private Func<TKey, string?>? _formatter;
     private IComparer<TKey>? _comparer;
     private GridValueParser<TKey>? _parser;
@@ -57,12 +58,20 @@ public sealed class GridColumnBuilder<TSource, TKey>
     internal void SetDefaultHeader(string header)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(header);
+        // Kept apart from _header so that an explicit Header("") still has a readable name to
+        // fall back on for menus and aria-labels.
+        _defaultHeader ??= header;
         _header ??= header;
     }
 
+    /// <summary>
+    /// Sets the heading. An empty string is allowed and renders a blank <c>&lt;th&gt;</c>, for
+    /// columns that only carry a row action or an icon; menus and aria-labels then fall back to
+    /// the humanized field name, so nothing ends up nameless.
+    /// </summary>
     public GridColumnBuilder<TSource, TKey> Header(string header)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(header);
+        ArgumentNullException.ThrowIfNull(header);
         _header = header;
         return this;
     }
@@ -207,6 +216,7 @@ public sealed class GridColumnBuilder<TSource, TKey>
         {
             Field = _field,
             Header = _header ?? HumanizeFieldName(_field),
+            Label = !string.IsNullOrWhiteSpace(_header) ? _header : _defaultHeader ?? HumanizeFieldName(_field),
             Format = ResolveFormatter(),
             RawCellHtml = _rawCellHtml,
             SortStrategy = sortStrategy,
