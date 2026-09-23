@@ -6,6 +6,8 @@
 [![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4?style=flat-square&logo=dotnet)](https://dotnet.microsoft.com/)
 [![License](https://img.shields.io/badge/license-MIT-22c55e?style=flat-square)](https://github.com/mchinchilla/NetOpenGrid/blob/main/LICENSE)
 
+![NetOpenGrid: product catalog with row selection and the Excel-style Category filter open](https://raw.githubusercontent.com/mchinchilla/NetOpenGrid/main/docs/images/products-grid.png)
+
 No virtual DOM. No reflection on the hot path. No per-request expression compilation. The server renders
 only the current page's `<tbody>`; filtering, sorting, searching, paging and grouping run on delegates
 compiled exactly once when the grid is configured.
@@ -65,9 +67,61 @@ app.MapNetOpenGrid();     // GET /netgrid/:id · /rows · /values · /export · 
 ```
 
 **3. Open `http://localhost:PORT/netgrid/employees`.** The component serves its own JS (Alpine + HTMX
-embedded in the assembly); there is nothing to copy into `wwwroot`. Compile a Tailwind v4 theme to
-`wwwroot/css/netopengrid-{theme}.css`; the repository ships the `grid` and `midnight` sources under
-`themes/` and a `tools/build-themes.sh` script.
+embedded in the assembly); there is nothing to copy into `wwwroot` except the theme CSS. Copy the precompiled
+`netopengrid-grid.css` or `netopengrid-midnight.css` from
+[`samples/NetOpenGrid.Example/wwwroot/css`](https://github.com/mchinchilla/NetOpenGrid/tree/main/samples/NetOpenGrid.Example/wwwroot/css)
+into `wwwroot/css/`, or compile the `themes/` sources with the Tailwind v4 CLI.
+
+## Embedding in a Razor view
+
+Each grid is its own HTML document at `/netgrid/{id}`. Put it in any Razor view with an iframe and `?embed=1`,
+which drops the standalone chrome and makes the grid background transparent:
+
+```cshtml
+@page
+@{
+    // Forward this page's query string: grid state lives in the URL, so /products?sort=price:desc is a deep link.
+    var gridSrc = "/netgrid/products?embed=1"
+        + (Request.QueryString.HasValue ? "&" + Request.QueryString.Value![1..] : "");
+}
+
+<h1>Products</h1>
+<iframe class="grid-frame" data-netgrid src="@gridSrc" title="Product catalog"></iframe>
+```
+
+```css
+.grid-frame { display: block; width: 100%; height: 640px; border: 0; color-scheme: normal; }
+```
+
+The frame is same-origin, so a few lines in your layout can size it to its content:
+
+```html
+<script>
+    const fitted = new WeakSet();
+    const fitGrid = (frame) => {
+        const doc = frame.contentDocument;
+        if (!doc?.body || doc.URL === "about:blank" || fitted.has(doc)) return;
+        fitted.add(doc);
+        // Measure <html>, not <body>: the grid's last margin collapses out of <body>.
+        const fit = () => { frame.style.height = `${Math.ceil(doc.documentElement.getBoundingClientRect().height)}px`; };
+        new ResizeObserver(fit).observe(doc.documentElement);
+        fit();
+    };
+    for (const frame of document.querySelectorAll("iframe[data-netgrid]")) {
+        frame.addEventListener("load", () => fitGrid(frame));
+        if (frame.contentDocument?.readyState === "complete") fitGrid(frame);
+    }
+</script>
+```
+
+- Call `.WithMinHeight("")` on embedded grids; the default minimum height is meant for standalone pages.
+- `color-scheme: normal` keeps the frame transparent when your page is in dark mode.
+- Row-action links rendered with `target="_top"` navigate the whole page.
+- Build the URL in code and write `src="@gridSrc"`. Razor does not evaluate `src="/x?embed=1@query"`, because it reads `1@query` as an e-mail address.
+
+The complete, runnable Razor Pages walkthrough is in the repository README, and
+[`samples/NetOpenGrid.Example`](https://github.com/mchinchilla/NetOpenGrid/tree/main/samples/NetOpenGrid.Example)
+embeds an in-memory grid, an EF Core grid and a JSON grid.
 
 ## EF Core (SQL push-down)
 
@@ -85,7 +139,7 @@ builder.Services.AddNetOpenGrid().AddGrid<Employee>("employees",
     (sp, opts) => new EFCoreGridDataSource<Employee>(
         opts,
         sp,
-        (sp, db) => db.Set<Employee>().AsNoTracking()));
+        scoped => scoped.GetRequiredService<AppDb>().Set<Employee>().AsNoTracking().OrderBy(e => e.Id)));
 ```
 
 - Define columns with the `AddColumn(e => e.Prop, ...)` expression overloads. A sortable, filterable or
@@ -95,6 +149,9 @@ builder.Services.AddNetOpenGrid().AddGrid<Employee>("employees",
   as constants in the expression tree.
 - The data source opens an `IServiceScope` per request, so a scoped `DbContext` works as-is.
 - SQL does not guarantee stable ties: add a sort on a unique column for deterministic paging.
+
+
+![Orders grid over EF Core, grouped by country](https://raw.githubusercontent.com/mchinchilla/NetOpenGrid/main/docs/images/orders-grouped.png)
 
 ## JSON mode
 

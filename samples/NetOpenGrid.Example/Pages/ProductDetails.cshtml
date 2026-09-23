@@ -1,0 +1,39 @@
+@page "/products/{sku}"
+@{
+    var sku = (string?)RouteData.Values["sku"];
+    var product = ProductData.All.FirstOrDefault(p => p.Sku == sku);
+
+    ViewData["Title"] = product?.Name ?? "Not found";
+    ViewData["Nav"] = "products";
+
+    if (product is null)
+    {
+        Response.StatusCode = StatusCodes.Status404NotFound;
+    }
+}
+
+<p class="links"><a href="/">← Back to the catalog</a></p>
+
+@if (product is null)
+{
+    <section class="page-head">
+        <h1>Product not found</h1>
+        <p>There is no product with SKU <code>@sku</code>.</p>
+    </section>
+}
+else
+{
+    <section class="page-head">
+        <h1>@product.Name</h1>
+        <p>Reached from the grid's blank-header <em>Details</em> column (<code>target="_top"</code>).</p>
+    </section>
+
+    <dl class="details">
+        <dt>SKU</dt><dd><code>@product.Sku</code></dd>
+        <dt>Category</dt><dd>@product.Category</dd>
+        <dt>Price</dt><dd>@product.Price.ToString("C2", System.Globalization.CultureInfo.GetCultureInfo("en-US"))</dd>
+        <dt>Stock</dt><dd>@product.Stock</dd>
+        <dt>Released on</dt><dd>@product.ReleasedOn.ToString("yyyy-MM-dd")</dd>
+        <dt>Status</dt><dd>@(product.Available ? "In stock" : "Sold out")</dd>
+    </dl>
+}

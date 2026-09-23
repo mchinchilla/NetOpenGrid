@@ -1,0 +1,51 @@
+@{
+    var active = ViewData["Nav"] as string;
+    string Current(string key) => key == active ? "page" : "false";
+}
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>@ViewData["Title"] · NetOpenGrid example</title>
+    <link rel="stylesheet" href="~/css/site.css" asp-append-version="true">
+</head>
+<body>
+    <header class="site-header">
+        <div class="container site-header__inner">
+            <a class="brand" href="/">⚡ NetOpenGrid</a>
+            <nav class="site-nav">
+                <a href="/" aria-current="@Current("products")">Products</a>
+                <a href="/orders" aria-current="@Current("orders")">Orders</a>
+                <a href="/currencies" aria-current="@Current("currencies")">Currencies</a>
+            </nav>
+        </div>
+    </header>
+
+    <main class="container">
+        @RenderBody()
+    </main>
+
+    <footer class="container site-footer">
+        Your own layout and CSS; the grid lives in an isolated iframe with its own Tailwind theme.
+    </footer>
+
+    @* Same-origin iframes: size each grid frame to its content, so the host page scrolls instead of the frame. *@
+    <script>
+        const fitted = new WeakSet();
+        const fitGrid = (frame) => {
+            const doc = frame.contentDocument;
+            if (!doc?.body || doc.URL === "about:blank" || fitted.has(doc)) return;
+            fitted.add(doc);
+            // Measure <html>, not <body>: the grid's last margin collapses out of <body>.
+            const fit = () => { frame.style.height = `${Math.ceil(doc.documentElement.getBoundingClientRect().height)}px`; };
+            new ResizeObserver(fit).observe(doc.documentElement);
+            fit();
+        };
+        for (const frame of document.querySelectorAll("iframe[data-netgrid]")) {
+            frame.addEventListener("load", () => fitGrid(frame));
+            if (frame.contentDocument?.readyState === "complete") fitGrid(frame);
+        }
+    </script>
+</body>
+</html>
