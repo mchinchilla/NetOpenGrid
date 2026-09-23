@@ -1,0 +1,171 @@
+name: Publish NuGet
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Never let two pushes to main compute/tag the same version concurrently.
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  NUGET_SOURCE: https://api.nuget.org/v3/index.json
+
+jobs:
+  build:
+    name: Build, test & pack
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - name: Checkout (full history + tags)
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Compute next version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          base="$(sed -n 's:.*<VersionPrefix>\(.*\)</VersionPrefix>.*:\1:p' Directory.Build.props | head -n1)"
+          if [[ ! "$base" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::VersionPrefix in Directory.Build.props must be MAJOR.MINOR.PATCH (got '$base')."
+            exit 1
+          fi
+          base_mm="${base%.*}"
+
+          latest="$(git tag --list 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | head -n1 || true)"
+
+          if [[ -z "$latest" ]]; then
+            next="$base"
+            echo "No previous v* tag found. Starting at base version $next."
+          else
+            latest="${latest#v}"
+            latest_mm="${latest%.*}"
+            if [[ "$latest_mm" == "$base_mm" ]]; then
+              next="$base_mm.$(( ${latest##*.} + 1 ))"
+              echo "Latest tag v$latest shares $base_mm.x -> bumping patch to $next."
+            else
+              next="$base"
+              echo "Latest tag v$latest differs from base $base_mm.x -> using base version $next."
+            fi
+          fi
+
+          if git rev-parse -q --verify "refs/tags/v$next" >/dev/null; then
+            echo "::error::Tag v$next already exists. Raise <VersionPrefix> in Directory.Build.props."
+            exit 1
+          fi
+
+          echo "version=$next" >> "$GITHUB_OUTPUT"
+          echo "### Version: \`$next\`" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Restore
+        run: dotnet restore NetOpenGrid.slnx
+
+      - name: Build
+        run: dotnet build NetOpenGrid.slnx --no-restore --configuration Release -p:Version=${{ steps.version.outputs.version }}
+
+      - name: Test
+        run: dotnet test NetOpenGrid.slnx --no-build --configuration Release --logger "trx;LogFileName=results.trx" --results-directory artifacts/test-results
+
+      - name: Pack
+        run: dotnet pack NetOpenGrid.slnx --no-build --configuration Release -p:Version=${{ steps.version.outputs.version }} --output artifacts/packages
+
+      - name: Upload packages
+        uses: actions/upload-artifact@v5
+        with:
+          name: packages
+          path: |
+            artifacts/packages/*.nupkg
+            artifacts/packages/*.snupkg
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: test-results
+          path: artifacts/test-results
+          if-no-files-found: ignore
+          retention-days: 7
+
+  publish:
+    name: Publish to NuGet & tag
+    needs: build
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    environment:
+      name: nuget
+      url: https://www.nuget.org/packages/NetOpenGrid.Infrastructure/${{ needs.build.outputs.version }}
+    env:
+      VERSION: ${{ needs.build.outputs.version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Download packages
+        uses: actions/download-artifact@v6
+        with:
+          name: packages
+          path: artifacts/packages
+
+      - name: Push to nuget.org
+        env:
+          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${NUGET_API_KEY:-}" ]]; then
+            echo "::error::Missing repository secret NUGET_API_KEY."
+            exit 1
+          fi
+          # .snupkg symbol packages next to each .nupkg are pushed automatically.
+          dotnet nuget push "artifacts/packages/*.nupkg" \
+            --api-key "$NUGET_API_KEY" \
+            --source "$NUGET_SOURCE" \
+            --skip-duplicate
+
+      - name: Create and push tag v${{ env.VERSION }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "v$VERSION" -m "NetOpenGrid v$VERSION" "$GITHUB_SHA"
+          git push origin "refs/tags/v$VERSION"
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release create "v$VERSION" \
+            artifacts/packages/*.nupkg artifacts/packages/*.snupkg \
+            --title "v$VERSION" \
+            --generate-notes \
+            --verify-tag
+          echo "Published NetOpenGrid v$VERSION" >> "$GITHUB_STEP_SUMMARY"

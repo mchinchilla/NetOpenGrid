@@ -1,4 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <Description>NetOpenGrid application layer: fluent GridOptionsBuilder with precompiled column delegates, request parsing, in-memory query pipeline (filter, sort, page, group), filter strategies and the JSON-mode grid.</Description>
+  </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../NetOpenGrid.Domain/NetOpenGrid.Domain.csproj" />
   </ItemGroup>

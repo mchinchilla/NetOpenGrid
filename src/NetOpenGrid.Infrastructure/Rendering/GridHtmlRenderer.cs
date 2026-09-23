@@ -206,11 +206,22 @@ public sealed class GridHtmlRenderer<TItem>
         return merged;
     }
 
+    /// <summary>
+    /// Renderiza el documento HTML completo del grid (shell): cabecera, toolbar, tabla con la
+    /// primera página ya pintada y los scripts embebidos que activan HTMX y Alpine.
+    /// </summary>
+    /// <param name="initialResult">Resultado de la consulta inicial que se pinta en el primer render.</param>
+    /// <param name="columnOrder">
+    /// Orden de columnas elegido por el usuario. Si es <see langword="null"/> o está vacío se usa
+    /// el orden configurado; las columnas visibles ausentes se añaden al final.
+    /// </param>
     /// <param name="embedded">
     /// El grid se pinta dentro de un iframe en otra página. Entonces sobra su propio cromo: el
     /// fondo de página, el ancho máximo y el relleno los pone ya la página anfitriona, y
     /// repetirlos deja la tabla encajonada y pequeña.
     /// </param>
+    /// <param name="cancellationToken">Token para cancelar el render.</param>
+    /// <returns>El HTML del shell como cadena.</returns>
     public ValueTask<string> RenderShellAsync(GridExecutionResult<TItem> initialResult, IReadOnlyList<GridColumn<TItem>>? columnOrder = null, bool embedded = false, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();

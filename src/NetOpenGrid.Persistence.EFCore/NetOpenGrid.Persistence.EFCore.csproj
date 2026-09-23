@@ -1,4 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <Description>Entity Framework Core data source for NetOpenGrid. Translates grid filters, sorting, paging and per-value counts into IQueryable expressions so the work is pushed down to SQL.</Description>
+    <PackageTags>$(PackageTags);efcore;entity-framework;sql</PackageTags>
+  </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.EntityFrameworkCore" />
   </ItemGroup>

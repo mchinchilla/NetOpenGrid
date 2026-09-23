@@ -9,4 +9,19 @@
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
     <AccelerateBuildsInVisualStudio>true</AccelerateBuildsInVisualStudio>
   </PropertyGroup>
+
+  <PropertyGroup Label="Versioning">
+    <!--
+      Base version for every assembly and NuGet package.
+      The publish workflow (.github/workflows/publish.yml) reads this value:
+        - If the latest git tag shares the same MAJOR.MINOR, it bumps PATCH (v1.0.3 -> 1.0.4).
+        - If you change MAJOR or MINOR here, the next publish starts at this exact version.
+      Local builds use this value as-is (e.g. 1.0.0).
+    -->
+    <VersionPrefix>1.0.0</VersionPrefix>
+    <!-- Only library projects under src/ opt in (see src/Directory.Build.props). -->
+    <IsPackable>false</IsPackable>
+    <!-- `dotnet pack NetOpenGrid.slnx` must stay quiet for the host, sample and test projects. -->
+    <WarnOnPackingNonPackableProject>false</WarnOnPackingNonPackableProject>
+  </PropertyGroup>
 </Project>

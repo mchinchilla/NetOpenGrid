@@ -1,2 +1,5 @@
 <Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <Description>NetOpenGrid core domain: grid/column contracts, filter, sort, paging and grouping descriptors, and the IGridDataSource abstraction. Dependency-free building blocks shared by every NetOpenGrid package.</Description>
+  </PropertyGroup>
 </Project>

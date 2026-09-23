@@ -16,6 +16,8 @@ Sin virtual DOM. Sin reflexión en el hot path. Sin compilar expresiones por req
 [![Alpine.js](https://img.shields.io/badge/Alpine.js-3-77C1CB?style=for-the-badge&logo=alpinedotjs&logoColor=white)](https://alpinejs.dev)
 [![Tests](https://img.shields.io/badge/tests-102%20passing-16A34A?style=for-the-badge&logo=xunit&logoColor=white)](#-testing)
 [![License](https://img.shields.io/badge/License-MIT-F59E0B?style=for-the-badge)](LICENSE)
+[![NuGet](https://img.shields.io/nuget/v/NetOpenGrid.Infrastructure?style=for-the-badge&logo=nuget&logoColor=white&label=NuGet&color=004880)](https://www.nuget.org/packages/NetOpenGrid.Infrastructure)
+[![Publish](https://img.shields.io/github/actions/workflow/status/mchinchilla/NetOpenGrid/publish.yml?branch=main&style=for-the-badge&logo=githubactions&logoColor=white&label=publish)](https://github.com/mchinchilla/NetOpenGrid/actions/workflows/publish.yml)
 
 </div>
 
@@ -27,6 +29,7 @@ Sin virtual DOM. Sin reflexión en el hot path. Sin compilar expresiones por req
 - [✨ Features](#-features)
 - [Stack](#-stack)
 - [Arquitectura](#-arquitectura)
+- [Instalación](#-instalación)
 - [Quickstart](#-quickstart)
 - [Workflows](#-workflows)
 - [EF Core (push-down a SQL)](#-ef-core-push-down-a-sql)
@@ -140,6 +143,29 @@ flowchart TB
     PIPE --> M
     ENG --> M
 ```
+
+---
+
+## 📦 Instalación
+
+Los paquetes se publican en [NuGet](https://www.nuget.org/packages?q=NetOpenGrid). Cada commit a `main`
+publica una versión nueva y crea el tag `vX.Y.Z` correspondiente (ver [`.github/workflows/publish.yml`](.github/workflows/publish.yml)).
+
+| Paquete | Para qué sirve |
+|---|---|
+| [`NetOpenGrid.Infrastructure`](https://www.nuget.org/packages/NetOpenGrid.Infrastructure) | **El que necesitas en tu app ASP.NET Core.** `AddNetOpenGrid()`, `MapNetOpenGrid()`, renderer HTML, assets embebidos, export CSV, i18n. Arrastra `Application` y `Domain`. |
+| [`NetOpenGrid.Persistence.EFCore`](https://www.nuget.org/packages/NetOpenGrid.Persistence.EFCore) | Data source sobre `IQueryable` de EF Core: filtros, orden, paginación y conteos se ejecutan en SQL. |
+| [`NetOpenGrid.Application`](https://www.nuget.org/packages/NetOpenGrid.Application) | Builders, motor de consulta in-memory, estrategias de filtro y modo JSON. Sin dependencia de ASP.NET Core. |
+| [`NetOpenGrid.Domain`](https://www.nuget.org/packages/NetOpenGrid.Domain) | Contratos y descriptores (columnas, filtros, orden, paginación, grupos). Sin dependencias. |
+
+```bash
+dotnet add package NetOpenGrid.Infrastructure
+# Opcional, si tu fuente de datos es EF Core:
+dotnet add package NetOpenGrid.Persistence.EFCore
+```
+
+> Versionado: `MAJOR.MINOR` se controla desde `<VersionPrefix>` en [`Directory.Build.props`](Directory.Build.props);
+> el workflow incrementa `PATCH` automáticamente en cada commit. Sube `MAJOR` o `MINOR` ahí cuando haya cambios de API.
 
 ---
 
