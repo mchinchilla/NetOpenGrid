@@ -117,7 +117,7 @@ jobs:
       contents: write
     environment:
       name: nuget
-      url: https://www.nuget.org/packages/NetOpenGrid.Infrastructure/${{ needs.build.outputs.version }}
+      url: https://www.nuget.org/packages/NetOpenGrid/${{ needs.build.outputs.version }}
     env:
       VERSION: ${{ needs.build.outputs.version }}
     steps:

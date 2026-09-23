@@ -16,7 +16,7 @@ No virtual DOM. No reflection on the hot path. No per-request expression compila
 [![Alpine.js](https://img.shields.io/badge/Alpine.js-3-77C1CB?style=for-the-badge&logo=alpinedotjs&logoColor=white)](https://alpinejs.dev)
 [![Tests](https://img.shields.io/badge/tests-102%20passing-16A34A?style=for-the-badge&logo=xunit&logoColor=white)](#-testing)
 [![License](https://img.shields.io/badge/License-MIT-F59E0B?style=for-the-badge)](LICENSE)
-[![NuGet](https://img.shields.io/nuget/v/NetOpenGrid.Infrastructure?style=for-the-badge&logo=nuget&logoColor=white&label=NuGet&color=004880)](https://www.nuget.org/packages/NetOpenGrid.Infrastructure)
+[![NuGet](https://img.shields.io/nuget/v/NetOpenGrid?style=for-the-badge&logo=nuget&logoColor=white&label=NuGet&color=004880)](https://www.nuget.org/packages/NetOpenGrid)
 [![Publish](https://img.shields.io/github/actions/workflow/status/mchinchilla/NetOpenGrid/publish.yml?branch=main&style=for-the-badge&logo=githubactions&logoColor=white&label=publish)](https://github.com/mchinchilla/NetOpenGrid/actions/workflows/publish.yml)
 
 </div>
@@ -153,13 +153,14 @@ publishes a new version and creates the matching `vX.Y.Z` tag (see [`.github/wor
 
 | Package | What it is for |
 |---|---|
-| [`NetOpenGrid.Infrastructure`](https://www.nuget.org/packages/NetOpenGrid.Infrastructure) | **The one you need in your ASP.NET Core app.** `AddNetOpenGrid()`, `MapNetOpenGrid()`, HTML renderer, embedded assets, CSV export, i18n. Pulls in `Application` and `Domain`. |
+| [`NetOpenGrid`](https://www.nuget.org/packages/NetOpenGrid) | **The one you install in your ASP.NET Core app.** Meta-package with no assembly of its own: it just references `Infrastructure`, `Application` and `Domain`. |
+| [`NetOpenGrid.Infrastructure`](https://www.nuget.org/packages/NetOpenGrid.Infrastructure) | `AddNetOpenGrid()`, `MapNetOpenGrid()`, HTML renderer, embedded assets, CSV export, i18n. Pulls in `Application` and `Domain`. |
 | [`NetOpenGrid.Persistence.EFCore`](https://www.nuget.org/packages/NetOpenGrid.Persistence.EFCore) | Data source over an EF Core `IQueryable`: filters, sorting, paging and value counts run in SQL. |
 | [`NetOpenGrid.Application`](https://www.nuget.org/packages/NetOpenGrid.Application) | Builders, in-memory query engine, filter strategies and JSON mode. No ASP.NET Core dependency. |
 | [`NetOpenGrid.Domain`](https://www.nuget.org/packages/NetOpenGrid.Domain) | Contracts and descriptors (columns, filters, sorting, paging, groups). Dependency-free. |
 
 ```bash
-dotnet add package NetOpenGrid.Infrastructure
+dotnet add package NetOpenGrid
 # Optional, when your data source is EF Core:
 dotnet add package NetOpenGrid.Persistence.EFCore
 ```

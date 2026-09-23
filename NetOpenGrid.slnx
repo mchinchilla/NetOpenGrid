@@ -3,6 +3,7 @@
   <Project Path="src/NetOpenGrid.Application/NetOpenGrid.Application.csproj" />
   <Project Path="src/NetOpenGrid.Infrastructure/NetOpenGrid.Infrastructure.csproj" />
   <Project Path="src/NetOpenGrid.Persistence.EFCore/NetOpenGrid.Persistence.EFCore.csproj" />
+  <Project Path="src/NetOpenGrid/NetOpenGrid.csproj" />
   <Project Path="src/NetOpenGrid.Host/NetOpenGrid.Host.csproj" />
   <Project Path="samples/NetOpenGrid.Example/NetOpenGrid.Example.csproj" />
   <Project Path="tests/NetOpenGrid.Domain.Tests/NetOpenGrid.Domain.Tests.csproj" />
