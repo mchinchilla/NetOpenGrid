@@ -1,7 +1,9 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <PackageId>NetOpenGrid.Npgsql</PackageId>
-    <Description>PostgreSQL data source for NetOpenGrid. Pushes paging, sorting, Excel-style value counts, grouping and filtering down to SQL over a raw Npgsql connection — for applications that do not use Entity Framework Core (RepoDb, Dapper or plain ADO.NET). You supply the SELECT; the grid never sees an ORM.</Description>
+    <!-- No PackageId override: the id follows the project name, exactly as its EFCore sibling
+         does (published as NetOpenGrid.Persistence.EFCore). Someone who found that package will
+         look for NetOpenGrid.Persistence.Npgsql, not a differently-shaped name. -->
+    <Description>PostgreSQL data source for NetOpenGrid. Translates grid filters, sorting, paging, per-value counts and grouping into SQL over a raw Npgsql connection, for applications that do not use Entity Framework Core - RepoDb, Dapper or plain ADO.NET. You supply the SELECT; the grid never sees an ORM.</Description>
     <PackageTags>$(PackageTags);postgresql;npgsql;sql;dapper;repodb;ado.net</PackageTags>
   </PropertyGroup>
   <ItemGroup>

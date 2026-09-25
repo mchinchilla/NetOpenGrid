@@ -169,7 +169,10 @@ public sealed class GridRuntime<TItem> : IGridRuntime
     {
         var normalization = GridRequestParser.Parse(values, _options);
         var result = await new GridQueryEngine<TItem>(_dataSource).ExecuteAsync(normalization.Query, cancellationToken);
-        return await _renderer.RenderShellAsync(result, ResolveColumnOrder(values), cancellationToken);
+        // ?embed=1 lo pone la página anfitriona en el src del iframe; abierto a pelo, el grid
+        // sigue trayendo su propio cromo.
+        var embedded = values.Get("embed") is "1" or "true";
+        return await _renderer.RenderShellAsync(result, ResolveColumnOrder(values), embedded, cancellationToken);
     }
 
     public async ValueTask<string> RenderFragmentAsync(GridRequestValues values, CancellationToken cancellationToken = default)

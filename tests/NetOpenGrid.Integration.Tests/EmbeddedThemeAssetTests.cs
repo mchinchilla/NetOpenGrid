@@ -10,7 +10,7 @@ public class EmbeddedThemeAssetTests
     {
         Assert.True(EmbeddedGridAssets.Themes.ContainsKey("grid"), "theme 'grid' is not embedded in the assembly");
         Assert.True(EmbeddedGridAssets.Themes.ContainsKey("midnight"), "theme 'midnight' is not embedded in the assembly");
-        Assert.True(EmbeddedGridAssets.Themes.ContainsKey("tekium"), "theme 'tekium' is not embedded in the assembly");
+        Assert.True(EmbeddedGridAssets.Themes.ContainsKey("cobalt"), "theme 'cobalt' is not embedded in the assembly");
     }
 
     [Fact]

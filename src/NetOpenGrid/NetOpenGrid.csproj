@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Meta-package: "dotnet add package NetOpenGrid" pulls in everything an ASP.NET Core app needs
+    (Infrastructure + Application + Domain). It ships no assembly of its own.
+    NetOpenGrid.Persistence.EFCore stays a separate, optional package so consumers that do not
+    use EF Core never pull it in.
+  -->
+  <PropertyGroup>
+    <Description>NetOpenGrid: server-rendered HTML data grid for ASP.NET Core (.NET 10) powered by HTMX + Alpine.js. Precompiled delegates (no reflection on the hot path), Excel-style filters with value counts, pinned and reorderable columns, nested grouping, server-side CSV export, i18n and embedded assets. This meta-package references NetOpenGrid.Infrastructure, NetOpenGrid.Application and NetOpenGrid.Domain. Add NetOpenGrid.Persistence.EFCore for an EF Core data source.</Description>
+
+    <IncludeBuildOutput>false</IncludeBuildOutput>
+    <IncludeSymbols>false</IncludeSymbols>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <!--
+    Empty lib/<tfm>/_._ placeholder: no assembly, but NuGet clients and nuget.org see which framework
+    the package targets (nuget.org shows the ".NET 10.0" badge only for packages with lib/ assets).
+  -->
+  <ItemGroup>
+    <None Include="_._" Pack="true" PackagePath="lib/$(TargetFramework)/" Visible="false" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../NetOpenGrid.Infrastructure/NetOpenGrid.Infrastructure.csproj" />
+    <ProjectReference Include="../NetOpenGrid.Application/NetOpenGrid.Application.csproj" />
+    <ProjectReference Include="../NetOpenGrid.Domain/NetOpenGrid.Domain.csproj" />
+  </ItemGroup>
+
+</Project>

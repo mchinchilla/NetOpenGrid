@@ -11,7 +11,29 @@ namespace NetOpenGrid.Domain.Columns;
 public sealed class GridColumn<T>
 {
     public required string Field { get; init; }
+
+    /// <summary>
+    /// Text shown in the <c>&lt;th&gt;</c>. May be empty on purpose: a column that only holds a
+    /// row action or an icon has nothing to title, and a blank heading reads better than a label
+    /// invented for it.
+    /// </summary>
     public required string Header { get; init; }
+
+    private readonly string? _label;
+
+    /// <summary>
+    /// How the column is named where it has to be picked or read aloud: the group-by list, the
+    /// filter and pin aria-labels, the CSV export. Never blank, because an empty entry in a menu
+    /// cannot be chosen and an empty aria-label tells a screen reader nothing.
+    /// Falls back to <see cref="Header"/>, then to <see cref="Field"/>.
+    /// </summary>
+    public string Label
+    {
+        get => !string.IsNullOrWhiteSpace(_label) ? _label
+            : !string.IsNullOrWhiteSpace(Header) ? Header
+            : Field;
+        init => _label = value;
+    }
     public required Func<T, string?> Format { get; init; }
 
     /// <summary>When set, its output is emitted as trusted raw HTML (server-controlled only).</summary>

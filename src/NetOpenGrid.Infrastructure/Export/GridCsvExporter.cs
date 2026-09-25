@@ -14,7 +14,8 @@ public static class GridCsvExporter
     {
         var sb = new StringBuilder(4096);
 
-        AppendLine(sb, string.Join(",", columns.Select(static c => Escape(c.Header))));
+        // Label, no Header: el encabezado puede ir en blanco y un CSV sin nombre de campo no se puede leer.
+        AppendLine(sb, string.Join(",", columns.Select(static c => Escape(c.Label))));
 
         foreach (var row in rows)
         {

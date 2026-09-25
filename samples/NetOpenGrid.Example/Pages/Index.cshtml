@@ -1,0 +1,19 @@
+@page
+@{
+    ViewData["Title"] = "Products";
+    ViewData["Nav"] = "products";
+}
+
+<section class="page-head">
+    <h1>Product catalog</h1>
+    <p>
+        Typed in-memory grid. Try the Excel-style filter on <em>Category</em>, shift-click two headers
+        for a multi-sort, drag a header to reorder, pick rows to export them, or open a product with
+        <em>Details</em>.
+    </p>
+</section>
+
+<div class="grid-card">
+    @* ?embed=1 drops the standalone chrome (site header, page background, padding). *@
+    <iframe class="grid-frame" data-netgrid src="/netgrid/products?embed=1" title="Product catalog"></iframe>
+</div>

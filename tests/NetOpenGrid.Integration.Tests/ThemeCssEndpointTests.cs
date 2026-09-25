@@ -14,7 +14,7 @@ public class ThemeCssEndpointTests : IClassFixture<HostFactory>
     [Theory]
     [InlineData("grid")]
     [InlineData("midnight")]
-    [InlineData("tekium")]
+    [InlineData("cobalt")]
     public async Task ThemeCss_IsServedFromTheEmbeddedAssets(string theme)
     {
         var client = _factory.CreateClient();

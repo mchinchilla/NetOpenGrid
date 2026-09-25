@@ -1,7 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <PackageId>NetOpenGrid</PackageId>
-    <Description>Server-rendered data grid for ASP.NET Core, powered by htmx, Alpine.js and Tailwind CSS. Ships its client runtime and themes inside the package.</Description>
+    <Description>NetOpenGrid: server-rendered HTML data grid for ASP.NET Core (.NET 10) powered by HTMX + Alpine.js. Precompiled delegates (no reflection on the hot path), Excel-style filters with value counts, pinned and reorderable columns, nested grouping, server-side CSV export, i18n and embedded assets. Start here: AddNetOpenGrid() + MapNetOpenGrid().</Description>
   </PropertyGroup>
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />

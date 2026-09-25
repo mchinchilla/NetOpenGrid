@@ -1,0 +1,30 @@
+@page
+@{
+    ViewData["Title"] = "Orders";
+    ViewData["Nav"] = "orders";
+
+    // The grid keeps its whole state in the query string, so the host page can deep-link into it:
+    //   /orders?filter=status:equals:pending&sort=total:desc
+    // With no query, open the view grouped by country.
+    var gridSrc = "/netgrid/orders?embed=1&"
+        + (Request.QueryString.HasValue ? Request.QueryString.Value![1..] : "groupby=country");
+}
+
+<section class="page-head">
+    <h1>Orders</h1>
+    <p>
+        EF Core over SQLite. Filters, sorting, paging, the per-value counts and grouping are all
+        translated to SQL. The view opens grouped by country; add <em>City</em> from
+        <em>Group by…</em> for a second level.
+    </p>
+    <p class="links">
+        Deep links:
+        <a href="/orders?filter=status:equals:pending&amp;sort=total:desc">pending, biggest first</a>
+        · <a href="/orders?groupby=status,country">by status and country</a>
+        · <a href="/orders?q=acme">search "acme"</a>
+    </p>
+</section>
+
+<div class="grid-card">
+    <iframe class="grid-frame" data-netgrid src="@gridSrc" title="Orders"></iframe>
+</div>

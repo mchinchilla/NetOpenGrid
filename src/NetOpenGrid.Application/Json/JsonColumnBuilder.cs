@@ -36,9 +36,10 @@ public sealed class JsonColumnBuilder
 
     public string Field => _field;
 
+    /// <summary>Empty is allowed: see <c>GridColumnBuilder.Header</c>.</summary>
     public JsonColumnBuilder Header(string header)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(header);
+        ArgumentNullException.ThrowIfNull(header);
         _header = header;
         return this;
     }
@@ -115,6 +116,7 @@ public sealed class JsonColumnBuilder
         {
             Field = _field,
             Header = _header ?? Builders.ColumnNameHumanizer.Humanize(_field),
+            Label = string.IsNullOrWhiteSpace(_header) ? Builders.ColumnNameHumanizer.Humanize(_field) : _header,
             Format = element =>
                 JsonStrategies.TryGetProperty(element, _field, out var value)
                     ? JsonStrategies.Format(value)

@@ -1,5 +1,8 @@
 using System.Globalization;
+using System.Net;
 using System.Text;
+using Microsoft.Data.Sqlite;
+using Microsoft.EntityFrameworkCore;
 using NetOpenGrid.Application.DataSources;
 using NetOpenGrid.Application.Json;
 using NetOpenGrid.Application.Options;
@@ -8,18 +11,28 @@ using NetOpenGrid.Domain.GridQuerying;
 using NetOpenGrid.Example.Samples;
 using NetOpenGrid.Infrastructure;
 using NetOpenGrid.Infrastructure.Endpoints;
+using NetOpenGrid.Persistence;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// The host app: plain Razor Pages. Each page embeds a grid through an <iframe src="/netgrid/{id}?embed=1">.
+builder.Services.AddRazorPages();
+
+// EF Core over an in-memory SQLite database that lives as long as the app (demo data only).
+var sqlite = new SqliteConnection("DataSource=:memory:");
+sqlite.Open();
+builder.Services.AddDbContext<ShopDb>(o => o.UseSqlite(sqlite));
+
+var usd = CultureInfo.GetCultureInfo("en-US");
+
+// JSON mode: options built up front, rows are JsonElement, selectors are property names.
 var currenciesOptions = new JsonGridOptionsBuilder()
     .WithId("currencies")
     .WithTitle("Currencies")
     .WithSubtitle("JSON mode, same pipeline")
-    .WithTheme("grid")
-    .WithDefaultPageSize(6)
-    .WithNavLinks(
-        new GridNavLink("Products", "/netgrid/products"),
-        new GridNavLink("Currencies", "/netgrid/currencies"))
+    .WithTheme("midnight")
+    .WithDefaultPageSize(10)
+    .WithMinHeight("")                                   // the iframe sets the height
     .AddColumn("code", c => c.Header("Code"))
     .AddColumn("name", c => c.Header("Name").Searchable())
     .AddColumn("rate", c => c
@@ -28,64 +41,120 @@ var currenciesOptions = new JsonGridOptionsBuilder()
         .AllowedOps(FilterOpSet.Numeric))
     .Build();
 
-builder.Services.AddNetOpenGrid()
+builder.Services.AddNetOpenGrid(
+        assets =>
+        {
+            assets.AssetPrefix = "/_netgrid";            // JS + HTMX + Alpine, served from the assembly
+            // CssPath is deliberately left unset: the compiled themes are embedded in the
+            // assembly and served from AssetPrefix/css, so a host needs no stylesheet of its own
+            // and there is no vendored copy to keep in sync. Set it (e.g. "/css") only when you
+            // want to serve your own build from wwwroot instead.
+        },
+        // Every client-facing label. "en" (default) or "es"; switch it in appsettings.json.
+        loc => loc.UseCulture(builder.Configuration["NetOpenGrid:Culture"] ?? "en"))
+
+    // 1) Typed in-memory grid: computed column, custom formats, badges, a row-action column,
+    //    pinned SKU and row selection.
     .AddGrid<Product>("products", options => options
         .WithTitle("Product catalog")
-        .WithSubtitle("Typed source with computed columns")
+        .WithSubtitle("In-memory source, precompiled delegates")
         .WithTheme("grid")
         .WithDefaultPageSize(10)
         .WithPageSizeChoices([10, 25, 50])
         .WithDebounce(250)
+        .WithMinHeight("")
         .EnableRowSelection(p => p.Sku)
-        .WithNavLinks(
-            new GridNavLink("Products", "/netgrid/products"),
-            new GridNavLink("Currencies", "/netgrid/currencies"))
         .AddColumn("sku", p => p.Sku, c => c.Header("SKU").Pinned())
-        .AddColumn("name", p => p.Name, c => c.Searchable())
-        .AddColumn("category", p => p.Category, c => c.Header("Category"))
-        .AddColumn("price", p => p.Price, c => c
-            .Header("Price")
+        // Expression overloads derive the field and a humanized header: Name, Category, Stock, "Released on".
+        .AddColumn(p => p.Name, c => c.Searchable())
+        .AddColumn(p => p.Category)
+        .AddColumn(p => p.Price, c => c
             .Align(ColumnAlign.End)
-            .Format(v => v.ToString("C2", CultureInfo.GetCultureInfo("en-US"))))
-        .AddColumn("stock", p => p.Stock, c => c.Header("Stock").Align(ColumnAlign.End))
+            .Format(v => v.ToString("C2", usd)))
+        .AddColumn(p => p.Stock, c => c.Align(ColumnAlign.End))
         .AddColumn("inventoryValue", p => p.Price * p.Stock, c => c
             .Header("Inventory value")
             .Align(ColumnAlign.End)
-            .Format(v => v.ToString("C0", CultureInfo.GetCultureInfo("en-US"))))
-        .AddColumn("releasedOn", p => p.ReleasedOn, c => c
-            .Header("Released on")
+            .Format(v => v.ToString("C0", usd)))
+        .AddColumn(p => p.ReleasedOn, c => c
             .Format(d => d.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)))
         .AddColumn("available", p => p.Available, c => c.Header("Status").RawCellHtml(p =>
-            $"<span class=\"badge {(p.Available ? "badge-success" : "badge-muted")}\">{(p.Available ? "In stock" : "Sold out")}</span>")),
+            $"<span class=\"badge {(p.Available ? "badge-success" : "badge-muted")}\">{(p.Available ? "In stock" : "Sold out")}</span>"))
+        // Blank header + trusted HTML: a row-action column. target="_top" leaves the iframe.
+        .AddColumn("details", p => p.Sku, c => c
+            .Header("")
+            .Sortable(false)
+            .Filterable(false)
+            .Searchable(false)
+            .RawCellHtml(p =>
+                $"<a class=\"font-medium text-brand-600\" target=\"_top\" href=\"/products/{WebUtility.UrlEncode(p.Sku)}\">Details</a>")),
         (_, opts) => new InMemoryGridDataSource<Product>(opts, ProductData.All))
+
+    // 2) EF Core grid: filters, sorting, paging, value counts and grouping run in SQL.
+    //    Push-down needs the Expression overloads (o => o.Prop).
+    .AddGrid<Order>("orders", options => options
+        .WithTitle("Orders")
+        .WithSubtitle("EF Core + SQLite, pushed down to SQL")
+        .WithTheme("grid")
+        .WithDefaultPageSize(15)
+        .WithPageSizeChoices([15, 30, 60])
+        .WithMinHeight("")
+        .AddColumn(o => o.Number, c => c.Header("Order").Pinned())
+        .AddColumn(o => o.Customer, c => c.Searchable())
+        .AddColumn(o => o.Country)
+        .AddColumn(o => o.City)
+        .AddColumn(o => o.Status, c => c.RawCellHtml(o =>
+            $"<span class=\"badge badge-{WebUtility.HtmlEncode(o.Status)}\">{WebUtility.HtmlEncode(o.Status)}</span>"))
+        .AddColumn(o => o.Items, c => c.Align(ColumnAlign.End))
+        .AddColumn(o => o.Total, c => c
+            .Align(ColumnAlign.End)
+            .Format(v => v.ToString("C2", usd)))
+        .AddColumn(o => o.PlacedOn, c => c
+            .Format(d => d.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture))),
+        // sp is the root provider; the data source opens a scope per request, so the scoped DbContext is safe.
+        (sp, opts) => new EFCoreGridDataSource<Order>(
+            opts,
+            sp,
+            // OrderBy(Id) is the default order, so paging stays deterministic until the user sorts.
+            scoped => scoped.GetRequiredService<ShopDb>().Orders.AsNoTracking().OrderBy(o => o.Id)))
+
+    // 3) JSON grid.
     .AddGrid(currenciesOptions, (_, opts) => new JsonGridDataSource(opts, CurrenciesPayload.Json));
 
 var app = builder.Build();
 
-app.MapNetOpenGrid();
-
-app.MapGet("/", () => Results.Redirect("/netgrid/products"));
-
-app.MapPost("/netgrid/{gridId}/export", async (string gridId, HttpRequest request, CancellationToken cancellationToken) =>
+using (var scope = app.Services.CreateScope())
 {
-    await Task.Yield();
+    var db = scope.ServiceProvider.GetRequiredService<ShopDb>();
+    db.Database.EnsureCreated();
+    db.Orders.AddRange(OrderData.Create());
+    db.SaveChanges();
+}
 
+app.UseStaticFiles();      // site.css (the grid themes come from the assembly)
+app.MapNetOpenGrid();      // GET /netgrid/{id} · /rows · /values · /export · /_netgrid/*
+app.MapRazorPages();       // the host pages under Pages/
+
+// The toolbar's download button uses the built-in GET /netgrid/{id}/export (whole filtered dataset).
+// The floating selection bar POSTs the selected row keys ("ids") here; this part is up to your app.
+app.MapPost("/netgrid/{gridId}/export", (string gridId, HttpRequest request) =>
+{
     if (gridId != "products")
     {
-        return Results.BadRequest("Export is only wired for the products grid.");
+        return Results.BadRequest("Selection export is only wired for the products grid.");
     }
 
     var skus = request.Form["ids"].ToString()
-        .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+        .ToHashSet(StringComparer.Ordinal);
 
-    if (skus.Length == 0)
+    if (skus.Count == 0)
     {
         return Results.BadRequest("No rows selected.");
     }
 
-    var selected = skus.ToHashSet(StringComparer.Ordinal);
-    var rows = ProductData.All.Where(p => selected.Contains(p.Sku));
-    return Results.File(Encoding.UTF8.GetBytes(ProductData.ToCsv(rows)), "text/csv", "products.csv");
+    var rows = ProductData.All.Where(p => skus.Contains(p.Sku));
+    return Results.File(Encoding.UTF8.GetBytes(ProductData.ToCsv(rows)), "text/csv", "products-selected.csv");
 });
 
 app.Run();

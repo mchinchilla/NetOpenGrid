@@ -1,0 +1,17 @@
+@page
+@{
+    ViewData["Title"] = "Currencies";
+    ViewData["Nav"] = "currencies";
+}
+
+<section class="page-head">
+    <h1>Currencies</h1>
+    <p>
+        JSON mode: rows are <code>JsonElement</code>, columns are property names, and the grid uses
+        the <em>midnight</em> theme. Same filters, sorting and CSV export as the typed grids.
+    </p>
+</section>
+
+<div class="grid-card">
+    <iframe class="grid-frame" data-netgrid src="/netgrid/currencies?embed=1" title="Currencies"></iframe>
+</div>

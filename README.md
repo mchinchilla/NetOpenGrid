@@ -14,10 +14,14 @@ Sin virtual DOM. Sin reflexión en el hot path. Sin compilar expresiones por req
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind-v4-06B6D4?style=for-the-badge&logo=tailwindcss&logoColor=white)](https://tailwindcss.com)
 [![HTMX](https://img.shields.io/badge/HTMX-2-3D72D7?style=for-the-badge)](https://htmx.org)
 [![Alpine.js](https://img.shields.io/badge/Alpine.js-3-77C1CB?style=for-the-badge&logo=alpinedotjs&logoColor=white)](https://alpinejs.dev)
-[![Tests](https://img.shields.io/badge/tests-102%20passing-16A34A?style=for-the-badge&logo=xunit&logoColor=white)](#-testing)
+[![Tests](https://img.shields.io/badge/tests-116%20passing-16A34A?style=for-the-badge&logo=xunit&logoColor=white)](#-testing)
 [![License](https://img.shields.io/badge/License-MIT-F59E0B?style=for-the-badge)](LICENSE)
+[![NuGet](https://img.shields.io/nuget/v/NetOpenGrid?style=for-the-badge&logo=nuget&logoColor=white&label=NuGet&color=004880)](https://www.nuget.org/packages/NetOpenGrid)
+[![Publish](https://img.shields.io/github/actions/workflow/status/mchinchilla/NetOpenGrid/publish.yml?branch=main&style=for-the-badge&logo=githubactions&logoColor=white&label=publish)](https://github.com/mchinchilla/NetOpenGrid/actions/workflows/publish.yml)
 
 </div>
+
+![NetOpenGrid incrustado en una página Razor: catálogo de productos con selección de filas y el filtro tipo Excel de Category abierto](docs/images/products-grid.png)
 
 ---
 
@@ -29,6 +33,7 @@ Sin virtual DOM. Sin reflexión en el hot path. Sin compilar expresiones por req
 - [Arquitectura](#-arquitectura)
 - [Instalación](#-instalación)
 - [Quickstart](#-quickstart)
+- [Grid en una vista Razor](#-grid-en-una-vista-razor)
 - [Workflows](#-workflows)
 - [EF Core (push-down a SQL)](#-ef-core-push-down-a-sql)
 - [Filtros tipo Excel (conteo por valor)](#-filtros-tipo-excel-conteo-por-valor)
@@ -146,95 +151,28 @@ flowchart TB
 
 ## 📦 Instalación
 
-NetOpenGrid se distribuye en cuatro paquetes. **Instala solo el primero** — los demás llegan como dependencias transitivas:
+Los paquetes se publican en [NuGet](https://www.nuget.org/packages?q=NetOpenGrid). Cada commit a `main`
+publica una versión nueva y crea el tag `vX.Y.Z` correspondiente (ver [`.github/workflows/publish.yml`](.github/workflows/publish.yml)).
 
-| Paquete | Contenido |
+| Paquete | Para qué sirve |
 |---|---|
-| `NetOpenGrid` | Integración con ASP.NET Core: DI, endpoints, renderer. **Este es el que instalas.** |
-| `NetOpenGrid.Core` | Motor de consultas, builders y estrategias de filtrado (transitivo) |
-| `NetOpenGrid.Abstractions` | Abstracciones, modelo de columnas y de consulta (transitivo) |
-| `NetOpenGrid.EntityFrameworkCore` | Origen de datos para EF Core. Opcional, instálalo aparte |
-
-### Desde el feed local
-
-Genera los paquetes y publícalos en `./artifacts`:
+| [`NetOpenGrid`](https://www.nuget.org/packages/NetOpenGrid) | **El que instalas en tu app ASP.NET Core.** Meta-paquete sin assembly propio: solo referencia `Infrastructure`, `Application` y `Domain`. |
+| [`NetOpenGrid.Infrastructure`](https://www.nuget.org/packages/NetOpenGrid.Infrastructure) | `AddNetOpenGrid()`, `MapNetOpenGrid()`, renderer HTML, assets embebidos, export CSV, i18n. Arrastra `Application` y `Domain`. |
+| [`NetOpenGrid.Persistence.EFCore`](https://www.nuget.org/packages/NetOpenGrid.Persistence.EFCore) | Data source sobre `IQueryable` de EF Core: filtros, orden, paginación y conteos se ejecutan en SQL. |
+| [`NetOpenGrid.Persistence.Npgsql`](https://www.nuget.org/packages/NetOpenGrid.Persistence.Npgsql) | Data source sobre una conexión Npgsql cruda: el mismo trabajo empujado a PostgreSQL, para apps que no usan EF Core - RepoDb, Dapper o ADO.NET a secas. Tú pones el SELECT. |
+| [`NetOpenGrid.Application`](https://www.nuget.org/packages/NetOpenGrid.Application) | Builders, motor de consulta in-memory, estrategias de filtro y modo JSON. Sin dependencia de ASP.NET Core. |
+| [`NetOpenGrid.Domain`](https://www.nuget.org/packages/NetOpenGrid.Domain) | Contratos y descriptores (columnas, filtros, orden, paginación, grupos). Sin dependencias. |
 
 ```bash
-./tools/pack.sh dev.1        # produce 0.1.0-dev.1
+dotnet add package NetOpenGrid
+# Opcional, si tu fuente de datos es EF Core:
+dotnet add package NetOpenGrid.Persistence.EFCore
+# ...o PostgreSQL sin EF Core:
+dotnet add package NetOpenGrid.Persistence.Npgsql
 ```
 
-En el proyecto que consume, crea un `nuget.config`:
-
-```xml
-<?xml version="1.0" encoding="utf-8"?>
-<configuration>
-  <packageSources>
-    <add key="nuget.org" value="https://api.nuget.org/v3/index.json" protocolVersion="3" />
-    <add key="netopengrid-local" value="D:\NetOpenGrid\artifacts" />
-  </packageSources>
-</configuration>
-```
-
-Esta fuente local se añade junto a tus feeds existentes; no los reemplaza. Si quieres el aislamiento
-estricto que se usó para verificar estos paquetes, añade `<clear />` como primera entrada dentro de
-`<packageSources>` — pero ten en cuenta que eso descarta **todas** las fuentes heredadas, incluidas
-las corporativas o privadas que ya use tu solución.
-
-```bash
-dotnet add package NetOpenGrid --version 0.1.0-dev.1
-```
-
-> **Sobre el sufijo `-dev.N`:** NuGet cachea los paquetes por id + versión. Si vuelves a empaquetar con el mismo número de versión, el proyecto consumidor seguirá usando la copia cacheada sin avisar. Usa un sufijo distinto en cada iteración.
-
-### Uso mínimo
-
-```csharp
-using NetOpenGrid.Application.DataSources;
-using NetOpenGrid.Infrastructure;
-using NetOpenGrid.Infrastructure.Endpoints;
-
-var builder = WebApplication.CreateBuilder(args);
-
-builder.Services.AddNetOpenGrid()
-    .AddGrid<Person>(
-        "people",
-        options => options
-            .WithTitle("People")
-            .AddColumn("name", p => p.Name, c => c.Header("Name").Searchable())
-            .AddColumn("email", p => p.Email, c => c.Header("Email")),
-        (_, options) => new InMemoryGridDataSource<Person>(options, people));
-
-var app = builder.Build();
-app.MapNetOpenGrid();
-app.Run();
-```
-
-No hace falta `wwwroot`, ni `UseStaticFiles()`, ni herramientas de build. El runtime JS, htmx, Alpine y el CSS de los temas van **dentro del paquete** y los sirve `MapNetOpenGrid`.
-
-### CSS propio
-
-Por defecto `CssPath` es `null` y el tema compilado se sirve desde `{AssetPrefix}/css/netopengrid-{tema}.css`. Si prefieres alojar tu propia hoja de estilos, asígnalo:
-
-```csharp
-builder.Services.AddNetOpenGrid(o =>
-{
-    o.AssetPrefix = "/_netgrid";
-    o.CssPath = "/css";          // sirve wwwroot/css/netopengrid-{tema}.css desde tu app
-    o.CssFilePrefix = "netopengrid-";
-});
-
-var app = builder.Build();
-app.UseStaticFiles();     // obligatorio en cuanto asignas CssPath: sirve tu wwwroot/css
-app.MapNetOpenGrid();
-```
-
-`CssFilePrefix` solo aplica cuando `CssPath` está asignado: no puede renombrar un recurso compilado dentro del ensamblado. `UseStaticFiles()` es **obligatorio** en cuanto asignas `CssPath` — sin él, el `<link>` generado apunta a una ruta que nadie sirve y el grid queda sin estilos. No hace falta si te quedas con el tema embebido por defecto.
-
-> **¿De dónde saco una hoja de estilos para empezar?** `MapNetOpenGrid()` mantiene la ruta embebida montada aunque asignes `CssPath` — lo único que cambia es el `<link>` que genera el renderer. Así que el tema compilado sigue siendo accesible en `{AssetPrefix}/css/netopengrid-{tema}.css`, y puedes descargarlo desde una instancia en ejecución como punto de partida para tu propio `wwwroot/css`:
->
-> ```bash
-> curl http://localhost:5000/_netgrid/css/netopengrid-grid.css -o wwwroot/css/netopengrid-grid.css
-> ```
+> Versionado: `MAJOR.MINOR` se controla desde `<VersionPrefix>` en [`Directory.Build.props`](Directory.Build.props);
+> el workflow incrementa `PATCH` automáticamente en cada commit. Sube `MAJOR` o `MINOR` ahí cuando haya cambios de API.
 
 ---
 
@@ -273,6 +211,205 @@ app.MapNetOpenGrid();     // GET /netgrid/:id · /rows · /_netgrid/* (incluye /
 JS y CSS (Alpine + HTMX + tema Tailwind embebidos en el ensamblado) — no hace falta `wwwroot` ni
 `UseStaticFiles()`. Para alojar tu propio CSS en vez del embebido, ver
 [CSS propio](#css-propio) más arriba.
+
+---
+
+## 🧩 Grid en una vista Razor
+
+Cada grid se sirve como su propio documento HTML en `/netgrid/{id}`. Para ponerlo dentro de **tus**
+vistas Razor, apunta un `<iframe>` a esa URL con `?embed=1`: el grid omite su cromo propio (header del sitio,
+fondo de página, ancho máximo, padding) y se pinta transparente, así que se integra con tu layout.
+
+| Por qué un iframe | |
+|---|---|
+| 🧱 Aislamiento | El tema Tailwind del grid (con su reset de CSS) no toca el CSS de tu sitio, y el tuyo no rompe el grid. |
+| 🔗 Mismo origen | Tu página puede ajustar la altura del frame a su contenido: hace scroll la página, no el frame. |
+| 🔁 Deep links | El estado del grid vive en el query string; reenvía el query de tu página al frame y `/products?sort=price:desc` funciona tal cual. |
+| ↗️ Acciones por fila | Los enlaces con `target="_top"` navegan la página completa, no el frame. |
+
+App Razor Pages completa y ejecutable (`dotnet new web` + estos archivos). Abre `http://localhost:PORT/products`.
+
+**1. Paquetes**
+
+```bash
+dotnet add package NetOpenGrid
+```
+
+**2. CSS del tema.** El grid carga `{CssPath}/netopengrid-{theme}.css`. Copia el
+`netopengrid-grid.css` (o `netopengrid-midnight.css`) precompilado desde [`samples/NetOpenGrid.Example/wwwroot/css`](https://github.com/mchinchilla/NetOpenGrid/tree/main/samples/NetOpenGrid.Example/wwwroot/css)
+a tu `wwwroot/css/`, o compila `themes/*.css` con el CLI de Tailwind v4 (ver [Temas](#-temas-tailwind-v4)).
+
+**3. `Program.cs`**: registra Razor Pages y el grid, y mapea ambos.
+
+```csharp
+using System.Globalization;
+using System.Net;
+using NetOpenGrid.Application.DataSources;
+using NetOpenGrid.Domain.Columns;
+using NetOpenGrid.Infrastructure;
+using NetOpenGrid.Infrastructure.Endpoints;
+
+var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddRazorPages();
+
+var usd = CultureInfo.GetCultureInfo("en-US");
+
+builder.Services.AddNetOpenGrid()
+    .AddGrid<Product>("products", grid => grid
+        .WithTitle("Product catalog")
+        .WithTheme("grid")                          // -> /css/netopengrid-grid.css
+        .WithDefaultPageSize(10)
+        .WithMinHeight("")                          // the iframe decides the height
+        .EnableRowSelection(p => p.Sku)
+        .AddColumn(p => p.Sku, c => c.Header("SKU").Pinned())
+        .AddColumn(p => p.Name, c => c.Searchable())
+        .AddColumn(p => p.Category)
+        .AddColumn(p => p.Price, c => c.Align(ColumnAlign.End).Format(v => v.ToString("C2", usd)))
+        .AddColumn(p => p.Stock, c => c.Align(ColumnAlign.End))
+        .AddColumn(p => p.ReleasedOn, c => c.Format(d => d.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)))
+        .AddColumn("status", p => p.Stock > 0, c => c.Header("Status").RawCellHtml(p => p.Stock > 0
+            ? "<span class=\"badge badge-success\">In stock</span>"
+            : "<span class=\"badge badge-muted\">Sold out</span>"))
+        .AddColumn("open", p => p.Sku, c => c
+            .Header("")                             // blank header: a row-action column
+            .Sortable(false).Filterable(false).Searchable(false)
+            .RawCellHtml(p => $"<a target=\"_top\" href=\"/products/{WebUtility.UrlEncode(p.Sku)}\">Open</a>")),
+        (_, options) => new InMemoryGridDataSource<Product>(options, Catalog.Products));
+
+var app = builder.Build();
+
+app.UseStaticFiles();     // wwwroot/css: site.css + netopengrid-grid.css
+app.MapNetOpenGrid();     // /netgrid/{id} (+ /rows, /values, /export) and /_netgrid/* assets
+app.MapRazorPages();
+
+app.Run();
+
+public enum Category { Electronics, Home, Sports, Toys, Books }
+
+public sealed record Product(string Sku, string Name, Category Category, decimal Price, int Stock, DateOnly ReleasedOn);
+
+public static class Catalog
+{
+    public static readonly IReadOnlyList<Product> Products = [.. Enumerable.Range(1, 120).Select(i => new Product(
+        Sku: $"SKU-{i:D4}",
+        Name: $"Product {i}",
+        Category: (Category)(i % 5),
+        Price: 4.99m + i * 3.25m,
+        Stock: i * 7 % 40,
+        ReleasedOn: new DateOnly(2024, 1, 1).AddDays(i * 5)))];
+}
+```
+
+**4. `Pages/_ViewImports.cshtml` y `Pages/_ViewStart.cshtml`**
+
+```cshtml
+@addTagHelper *, Microsoft.AspNetCore.Mvc.TagHelpers
+```
+
+```cshtml
+@{ Layout = "_Layout"; }
+```
+
+**5. `Pages/Shared/_Layout.cshtml`**: tu layout, más el script corto que ajusta cada frame del grid a su contenido.
+
+```cshtml
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>@ViewData["Title"]</title>
+    <link rel="stylesheet" href="~/css/site.css" asp-append-version="true">
+</head>
+<body>
+    <main class="container">@RenderBody()</main>
+
+    <script>
+        // Grid frames are same-origin: size each one to its content so the page scrolls, not the frame.
+        const fitted = new WeakSet();
+        const fitGrid = (frame) => {
+            const doc = frame.contentDocument;
+            if (!doc?.body || doc.URL === "about:blank" || fitted.has(doc)) return;
+            fitted.add(doc);
+            // Measure <html>, not <body>: the grid's last margin collapses out of <body>.
+            const fit = () => { frame.style.height = `${Math.ceil(doc.documentElement.getBoundingClientRect().height)}px`; };
+            new ResizeObserver(fit).observe(doc.documentElement);
+            fit();
+        };
+        for (const frame of document.querySelectorAll("iframe[data-netgrid]")) {
+            frame.addEventListener("load", () => fitGrid(frame));
+            if (frame.contentDocument?.readyState === "complete") fitGrid(frame);
+        }
+    </script>
+</body>
+</html>
+```
+
+**6. `Pages/Products.cshtml`**: la vista que aloja el grid.
+
+```cshtml
+@page
+@{
+    ViewData["Title"] = "Products";
+
+    // ?embed=1 drops the standalone chrome. The grid keeps its state in the query string, so
+    // forwarding this page's query makes /products?sort=price:desc&groupby=category a deep link.
+    var gridSrc = "/netgrid/products?embed=1"
+        + (Request.QueryString.HasValue ? "&" + Request.QueryString.Value![1..] : "");
+}
+
+<h1>Products</h1>
+<p>Any Razor markup can go around the grid.</p>
+
+<iframe class="grid-frame" data-netgrid src="@gridSrc" title="Product catalog"></iframe>
+```
+
+**7. `Pages/Product.cshtml`**: el destino de la columna de acción por fila.
+
+```cshtml
+@page "/products/{sku}"
+@{
+    var product = Catalog.Products.FirstOrDefault(p => p.Sku == (string?)RouteData.Values["sku"]);
+    ViewData["Title"] = product?.Name ?? "Not found";
+}
+
+<p><a href="/products">← Products</a></p>
+<h1>@(product?.Name ?? "Product not found")</h1>
+@if (product is not null)
+{
+    <p>@product.Sku · @product.Category · @product.Price.ToString("C2", System.Globalization.CultureInfo.GetCultureInfo("en-US"))</p>
+}
+```
+
+**8. `wwwroot/css/site.css`**
+
+```css
+body { margin: 0; font-family: system-ui, sans-serif; }
+@media (prefers-color-scheme: dark) { body { background: #0a0a0a; color: #f5f5f5; } }
+.container { max-width: 80rem; margin: 0 auto; padding: 0 16px; }
+
+.grid-frame {
+  display: block;
+  width: 100%;
+  height: 640px;          /* first paint; the layout script then fits it to the grid */
+  border: 0;
+  color-scheme: normal;   /* must match the grid document, or dark pages get an opaque white frame */
+}
+```
+
+A tener en cuenta:
+
+- El `color-scheme: normal` del frame importa. Si tu página está en modo oscuro y el esquema de color del
+  frame no coincide con el del documento del grid, el navegador pinta el iframe blanco y opaco.
+- `WithMinHeight("")` desactiva la altura mínima por defecto del grid (≈25 filas), pensada para páginas standalone.
+- La barra de selección envía las claves elegidas a `POST /netgrid/{id}/export` (campo `ids`). Ese endpoint
+  es de tu app; el ejemplo completo trae uno. El botón de descarga del toolbar usa el `GET /netgrid/{id}/export` integrado.
+- En Razor, escribe `src="@gridSrc"` con la URL armada en código. `src="/x?embed=1@query"` **no** se evalúa,
+  porque Razor interpreta `1@query` como una dirección de correo.
+
+El [ejemplo completo](samples/NetOpenGrid.Example) agrega un grid EF Core sobre SQLite (abre agrupado por país,
+con deep links), un grid en modo JSON con el tema `midnight` e i18n configurable desde `appsettings.json`.
 
 ---
 
@@ -375,7 +512,7 @@ services.AddNetOpenGrid().AddGrid<Employee>("employees",
     (sp, opts) => new EFCoreGridDataSource<Employee>(
         opts,
         sp,
-        (sp, db) => db.Set<Employee>().AsNoTracking()));
+        scoped => scoped.GetRequiredService<AppDb>().Set<Employee>().AsNoTracking().OrderBy(e => e.Id)));
 ```
 
 Reglas importantes:
@@ -461,6 +598,8 @@ builder.Services.AddNetOpenGrid(
 ---
 
 ## 🗂️ Agrupamiento por columna (anidado)
+
+![Grid de pedidos sobre EF Core, agrupado por país con United States expandido](docs/images/orders-grouped.png)
 
 `groupby=field1,field2,…` (hasta 3 niveles) + `expand=` para desplegar grupos. **Los grupos se paginan** (no las filas); expandir un grupo muestra sus sub-grupos o sus filas (estilo DevEx, cada nivel se expande por separado). Estado en la URL → deep-links con grupos abiertos.
 
@@ -627,7 +766,7 @@ NetOpenGrid.slnx
 │  ├─ NetOpenGrid.Infrastructure/      🛠️ runtime keyed-DI, renderer, endpoints, assets embebidos
 │  ├─ NetOpenGrid.Persistence.EFCore/  🗄️ EFCoreGridDataSource<T> (push-down a SQL)
 │  └─ NetOpenGrid.Host/                🖥️ demo (employees <T> + orders JSON + export CSV)
-├─ samples/NetOpenGrid.Example/        📦 ejemplo de consumo mínimo
+├─ samples/NetOpenGrid.Example/        📦 app Razor Pages que incrusta 3 grids (in-memory, EF Core, JSON)
 ├─ themes/                             🎨 fuentes Tailwind v4 (grid, midnight)
 ├─ tests/                              ✅ Domain · Application · EFCore · Integration
 ├─ tools/                              🔧 build-themes.sh/.cmd · fetch-vendor.sh · check-js.sh
@@ -641,7 +780,7 @@ NetOpenGrid.slnx
 dotnet test
 ```
 
-**102 tests**: Domain (20) · Application (42) · Integration (27) · EFCore (13).
+**116 tests**: Domain (20) · Application (56) · Integration (27) · EFCore (13).
 
 - **Domain**: paginado, operadores (incl. `In`), resultados.
 - **Application**: builders (validación, pin, i18n-safe), parser (whitelist/clamps/símbolos/JSON `in`),
@@ -680,7 +819,7 @@ dotnet test
 
 **NetOpenGrid** — *grids server-first para .NET 10*
 
-`dotnet run --project samples/NetOpenGrid.Example` → `http://localhost:5188/netgrid/products`
+`dotnet run --project samples/NetOpenGrid.Example` → `http://localhost:5188`
 
 [![Docs: ES](https://img.shields.io/badge/docs-ES-4F46E5?style=flat-square)](README.md)
 [![Docs: EN](https://img.shields.io/badge/docs-EN-9CA3AF?style=flat-square)](README.en.md)

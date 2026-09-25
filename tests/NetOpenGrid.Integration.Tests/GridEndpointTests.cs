@@ -230,7 +230,7 @@ public class GridEndpointTests : IClassFixture<HostFactory>
         var csv = await response.Content.ReadAsStringAsync();
         var lines = csv.Split("\r\n", StringSplitOptions.RemoveEmptyEntries);
 
-        Assert.StartsWith("Full name,email,Department,Salary,Hired on,Score,Status", lines[0]);
+        Assert.StartsWith("Full name,Email,Department,Salary,Hired on,Score,Status", lines[0]);
         Assert.Equal(expected + 1, lines.Length);   // header + matching rows (full dataset, not a page)
     }
 
@@ -243,7 +243,7 @@ public class GridEndpointTests : IClassFixture<HostFactory>
         var csv = await (await client.GetAsync($"/netgrid/employees/export?sort=id&pageSize=1&cols={cols}")).Content.ReadAsStringAsync();
         var header = csv.Split("\r\n")[0];
 
-        Assert.StartsWith("email,Full name,", header);
+        Assert.StartsWith("Email,Full name,", header);
     }
 
     private sealed record CsvRow(string Name, string City);
@@ -266,7 +266,7 @@ public class GridEndpointTests : IClassFixture<HostFactory>
         var csv = NetOpenGrid.Infrastructure.Export.GridCsvExporter.Build(options.Columns, rows);
         var lines = csv.Split("\r\n", StringSplitOptions.RemoveEmptyEntries);
 
-        Assert.Equal("name,city", lines[0]);
+        Assert.Equal("Name,City", lines[0]);
         Assert.Equal("\"Ana, jr\",Madrid", lines[1]);
         Assert.Equal("\"Say \"\"hi\"\"\",\"Li\nma\"", lines[2]);
     }

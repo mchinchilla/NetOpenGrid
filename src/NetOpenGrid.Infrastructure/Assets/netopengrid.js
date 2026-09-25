@@ -238,7 +238,9 @@
         window.addEventListener('resize', () => this.applyPinnedOffsets());
         requestAnimationFrame(() => this.applyPinnedOffsets());
 
-        if (this.columnOrder?.length) {
+        // The shell server-renders flat rows in the default column order. A saved/linked column
+        // order or a groupby= deep link needs one refresh to show the requested view.
+        if (this.columnOrder?.length || this.groupBy.length) {
           this.refresh();
         }
       },
