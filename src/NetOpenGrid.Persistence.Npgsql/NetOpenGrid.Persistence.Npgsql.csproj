@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <PackageId>NetOpenGrid.Npgsql</PackageId>
+    <Description>PostgreSQL data source for NetOpenGrid. Pushes paging, sorting, Excel-style value counts, grouping and filtering down to SQL over a raw Npgsql connection — for applications that do not use Entity Framework Core (RepoDb, Dapper or plain ADO.NET). You supply the SELECT; the grid never sees an ORM.</Description>
+    <PackageTags>$(PackageTags);postgresql;npgsql;sql;dapper;repodb;ado.net</PackageTags>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Npgsql" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/NetOpenGrid.Application/NetOpenGrid.Application.csproj" />
+  </ItemGroup>
+</Project>

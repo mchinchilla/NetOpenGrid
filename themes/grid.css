@@ -2,7 +2,26 @@
 
 @custom-variant dark (&:where(.dark, .dark *));
 
-@source "../src";
+/* Only the project that actually emits markup. Scanning all of ../src let any string in
+   any package leak a utility into every shipped theme — a bare "lowercase" inside a SQL
+   comment in NetOpenGrid.Persistence.Npgsql added .lowercase to all three themes. A data
+   access package must not be able to change the CSS this library ships. */
+/* Sources for the compiled theme.
+
+   Tailwind v4 scans this repo automatically IN ADDITION to any @source below, so a bare word
+   in any file can add a utility to every shipped theme: the word "lowercase" inside a SQL
+   comment in NetOpenGrid.Persistence.Npgsql put .lowercase into all three. Only
+   NetOpenGrid.Infrastructure emits markup (GridHtmlRenderer, netopengrid.js), so it is named
+   explicitly and the trees that emit none are excluded.
+
+   Do NOT collapse this to `@source not "../src"` plus a re-include of Infrastructure —
+   the exclusion wins and strips ~15KB of real renderer classes from the theme. */
+@source "../src/NetOpenGrid.Infrastructure";
+@source not "../src/NetOpenGrid.Domain";
+@source not "../src/NetOpenGrid.Application";
+@source not "../src/NetOpenGrid.Persistence.EFCore";
+@source not "../src/NetOpenGrid.Persistence.Npgsql";
+@source not "../tests";
 
 @theme {
   --color-brand-50: #eef2ff;
