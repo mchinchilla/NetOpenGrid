@@ -8,7 +8,6 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
     <AccelerateBuildsInVisualStudio>true</AccelerateBuildsInVisualStudio>
-    <VersionPrefix>0.1.0</VersionPrefix>
     <IsPackable>false</IsPackable>
   </PropertyGroup>
 
