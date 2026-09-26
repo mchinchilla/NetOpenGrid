@@ -1,3 +1,4 @@
+using NetOpenGrid.Domain.Columns;
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
@@ -336,6 +337,50 @@ public static class GridSqlBuilder
         if (target == typeof(DateTime)) return DateTime.Parse(text, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal);
 
         throw new NotSupportedException($"No parser for column type {target.Name}.");
+    }
+
+    /// <summary>
+    /// One <c>SELECT SUM/AVG/MIN/MAX</c> over the filtered projection, wrapped as a derived table
+    /// exactly like the COUNT query (the WHERE stays inside the parens, next to the projection's
+    /// own aliases). Every result is cast to <c>numeric</c> so the reader can always take a decimal.
+    /// Fields missing from the map are skipped; <paramref name="where"/> is the output of
+    /// <see cref="BuildWhere"/>, so the only identifiers composed here come from the map itself.
+    /// </summary>
+    public static (string Sql, IReadOnlyList<(string Field, GridAggregate Function)> Slots) BuildAggregateSelect(
+        GridSqlMap map, string where, IEnumerable<(string Field, GridAggregate Functions)> columns)
+    {
+        ArgumentNullException.ThrowIfNull(map);
+        ArgumentNullException.ThrowIfNull(where);
+        ArgumentNullException.ThrowIfNull(columns);
+
+        var selects = new List<string>();
+        var slots = new List<(string, GridAggregate)>();
+
+        foreach (var (field, functions) in columns)
+        {
+            if (!map.Columns.TryGetValue(field, out var column)) continue;
+
+            foreach (var function in functions.Functions())
+            {
+                var sqlFunction = function switch
+                {
+                    GridAggregate.Sum => "SUM",
+                    GridAggregate.Avg => "AVG",
+                    GridAggregate.Min => "MIN",
+                    _ => "MAX"
+                };
+
+                selects.Add($@"{sqlFunction}(src.""{column.OutputAlias}"")::numeric");
+                slots.Add((field, function));
+            }
+        }
+
+        if (selects.Count == 0)
+        {
+            return (string.Empty, slots);
+        }
+
+        return ($"SELECT {string.Join(", ", selects)} FROM ({map.Projection} {where}) AS src", slots);
     }
 
     public static string BuildOrderBy(GridSqlMap map, GridQuery query)

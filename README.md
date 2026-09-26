@@ -37,10 +37,15 @@ Sin virtual DOM. Sin reflexión en el hot path. Sin compilar expresiones por req
 - [Workflows](#-workflows)
 - [EF Core (push-down a SQL)](#-ef-core-push-down-a-sql)
 - [Filtros tipo Excel (conteo por valor)](#-filtros-tipo-excel-conteo-por-valor)
-- [Columnas fijadas y reordenables](#-columnas-fijadas-y-reordenables)
-- [Export CSV server-side](#-export-csv-server-side)
+- [Columnas fijadas, reordenables, redimensionables y ocultables](#-columnas-fijadas-reordenables-redimensionables-y-ocultables)
+- [Fila clicable y acciones por fila](#️-fila-clicable-y-acciones-por-fila)
+- [Export server-side (CSV y Excel)](#-export-server-side-csv-y-excel)
 - [i18n](#-i18n)
 - [Agrupamiento por columna (anidado)](#-agrupamiento-por-columna-anidado)
+- [Agregados (SUM · AVG · MIN · MAX)](#-agregados-sum--avg--min--max)
+- [Teclado y accesibilidad](#️-teclado-y-accesibilidad)
+- [Vistas guardadas](#-vistas-guardadas)
+- [Scroll virtual](#-scroll-virtual)
 - [Referencia de configuración](#-referencia-de-configuración)
 - [Tipos de columna y operadores](#-tipos-de-columna-y-operadores)
 - [Contrato cliente ↔ servidor](#-contrato-cliente--servidor)
@@ -87,14 +92,18 @@ flowchart LR
 | | Búsqueda global | `q` con debounce, OR sobre columnas `Searchable` |
 | ↕️ **Orden** | Multi-sort estable | Shift-click, ties deterministas (array decorado), nulls primero |
 | 🗂️ **Agrupamiento** | Anidado hasta 3 niveles | `groupby` + `expand` en URL; headers con chevron y conteo; grupos se paginan |
+| ➕ **Agregados** | SUM · AVG · MIN · MAX | Totales arriba/abajo y subtotales por grupo, sobre todo el conjunto filtrado; push-down a SQL |
 | 📄 **Paginación** | Server-side | Clamp de `pageSize`, meta por headers, deep-linking total |
 | ☑️ **Selección** | Filas + export | Barra flotante, select-all, CSV de selección o del dataset filtrado completo |
 | 📌 **Columnas** | Pin + reorder | Sticky con offsets calculados, drag & drop persistido en `localStorage` |
 | 🌐 **i18n** | Presets EN/ES | ~39 claves, override por clave, blob `__NETGRID__.locale` para el cliente |
 | 🎨 **Temas** | Tailwind v4 | Presets `grid`/`midnight`, dark mode persistido, escaneo de clases en C# |
 | 🔌 **Self-contained** | Assets embebidos | JS + HTMX + Alpine dentro del ensamblado, servidos con `?v={sha}` inmutable |
-| 🔗 **Deep links** | Estado en URL | `page·pageSize·sort·filter·q·groupby·expand·cols` — comparte la vista exacta |
-| ♿ **A11y** | aria-labels localizados | Roles, `aria-expanded`, focus rings, `x-cloak` |
+| 🖱️ **Filas** | Clicables + acciones | `WithRowLink` y `WithRowActions` (links y eventos `netgrid:action` para tu página) |
+| 🔖 **Vistas** | Predefinidas + del usuario | `AddView(...)` en el servidor; cada usuario guarda las suyas en su navegador |
+| 🔗 **Deep links** | Estado en URL | `page·pageSize·sort·filter·q·groupby·expand·cols·hide` — comparte la vista exacta |
+| ♿ **A11y** | aria-labels localizados | Roles, `aria-sort`, `aria-expanded`, focus rings, `x-cloak` |
+| ⌨️ **Teclado** | Tabindex móvil | Flechas entre celdas, PageUp/PageDown, Enter/Espacio; el cuerpo es una sola parada de Tab |
 
 ## 🧱 Stack
 
@@ -225,7 +234,7 @@ fondo de página, ancho máximo, padding) y se pinta transparente, así que se i
 | 🧱 Aislamiento | El tema Tailwind del grid (con su reset de CSS) no toca el CSS de tu sitio, y el tuyo no rompe el grid. |
 | 🔗 Mismo origen | Tu página puede ajustar la altura del frame a su contenido: hace scroll la página, no el frame. |
 | 🔁 Deep links | El estado del grid vive en el query string; reenvía el query de tu página al frame y `/products?sort=price:desc` funciona tal cual. |
-| ↗️ Acciones por fila | Los enlaces con `target="_top"` navegan la página completa, no el frame. |
+| ↗️ Acciones por fila | Los enlaces con `target="_top"` navegan la página completa, no el frame; las acciones `Event` llegan a tu página por `postMessage` (mismo origen). |
 
 App Razor Pages completa y ejecutable (`dotnet new web` + estos archivos). Abre `http://localhost:PORT/products`.
 
@@ -550,31 +559,92 @@ Implementado en los tres motores: in-memory (agrupación en snapshot), JSON (`Js
 
 ---
 
-## 📌 Columnas fijadas y reordenables
+## 📌 Columnas fijadas, reordenables, redimensionables y ocultables
 
 ```csharp
 .AddColumn("sku", p => p.Sku, c => c.Header("SKU").Pinned())
 ```
 
-- **Pinned**: `position: sticky` en `th`/`td` con offsets calculados por JS tras cada render/resize — la columna queda visible al hacer scroll horizontal (la columna de selección siempre se fija).
+- **Pinned** (izquierda o derecha): `position: sticky` en `th`/`td`; la columna queda visible al hacer scroll horizontal
+  (la de selección siempre se fija). `.Pinned()` fija a la izquierda, `.PinnedRight()` a la derecha, y
+  `WithRowActions(a => a.Pinned()...)` fija la columna de acciones a la derecha. El botón de pin de cada encabezado
+  rota **sin fijar → izquierda → derecha → sin fijar** (el ícono se voltea a la derecha y la etiqueta dice el siguiente paso).
+  Las fijadas se agrupan en su borde: izquierda + resto + derecha. El estado se guarda en `localStorage`, incluso
+  para desfijar lo que fijó el servidor.
 - **Reordenables**: arrastra el `th` para reordenar. El orden se persiste en `localStorage` por grid y viaja al servidor como `cols=field1,field2,…`; el renderer valida contra la whitelist (campos desconocidos se ignoran, los no mencionados se agregan al final en su orden por defecto).
+- **Redimensionables**: arrastra el borde derecho de un encabezado; doble clic lo ajusta al contenido de la página
+  visible, y `Alt+←` / `Alt+→` sobre un botón del encabezado lo cambia de a 16 px. El primer ajuste congela todas las
+  columnas en su ancho actual (`table-layout: fixed`, nada salta); lo que no cabe termina en "…". El mínimo es lo que
+  ocupan los botones del encabezado. Los anchos se guardan en `localStorage` por grid. `.WithColumnResize(false)` lo apaga.
+- **Mostrar/ocultar**: el botón de columnas de la barra abre una lista con un checkbox por columna y "Mostrar todas"
+  (la última columna visible no se puede desmarcar). La elección viaja al servidor como `hide=field1,field2,…`, así
+  que filas, totales, grupos y el **export CSV** salen sin esas columnas; se guarda en `localStorage` y en la URL.
+  `.WithColumnChooser(false)` lo apaga.
+
+## 🖱️ Fila clicable y acciones por fila
+
+```csharp
+.EnableRowSelection(p => p.Sku)          // o .WithRowKey(p => p.Sku) si no quieres selección
+.WithRowLink(p => $"/products/{p.Sku}", target: "_top")
+.WithRowActions(a => a
+    .Link("Details", p => $"/products/{p.Sku}", target: "_top")
+    .Event("archive", "Archive", RowActionStyle.Danger, visible: p => p.Available))
+```
+
+- **Fila clicable** (`WithRowLink`): un clic en cualquier parte de la fila navega. Se ignoran los clics sobre los
+  controles de la fila (checkbox, links, botones) y la selección de texto; `Ctrl`/`⌘`+clic y el clic central abren
+  una pestaña nueva. Con teclado, `Enter` sobre una celda sin control abre el link. `target: "_top"` sale del iframe.
+- **Acciones** (`WithRowActions`): columna al final con los links y botones de cada fila.
+  - `Link(label, href, target?)` → un `<a href>` normal.
+  - `Event(name, label)` → un botón que dispara `netgrid:action` con `{ grid, action, key }` en la raíz del grid
+    (burbujea hasta `document`). Si el grid está en un iframe, envía el mismo payload con `postMessage` **solo** a un
+    padre del mismo origen. El componente no ejecuta nada en el servidor: tu página decide (llamar a tu API, abrir un modal…).
+  - `style: RowActionStyle.Danger` las pinta en rojo; `visible:` las oculta por fila; `.Header("…")` cambia el título.
+  - `Event` necesita una clave de fila (`WithRowKey` o `EnableRowSelection`); sin ella el grid falla al configurarse.
+- **Refrescar** después de una acción: `document.dispatchEvent(new CustomEvent('netgrid:refresh', { detail: { grid: 'products' } }))`,
+  o desde la página anfitriona: `frame.contentWindow.postMessage({ type: 'netgrid:refresh', grid: 'products' }, location.origin)`.
+- **URLs seguras:** solo se renderizan URLs relativas, `http(s)`, `mailto` y `tel`; `javascript:`, `data:` y
+  `vbscript:` se descartan (en el link de la fila y en las acciones).
+- Si una celda tiene varios controles, `Enter` entra en ella, `←`/`→` los recorren y `Escape` vuelve a la celda.
+
+```js
+// Página anfitriona con el grid en un iframe (ver samples/NetOpenGrid.Example/Pages/Index.cshtml)
+window.addEventListener("message", (e) => {
+    if (e.origin !== location.origin || e.data?.type !== "netgrid:action") return;
+    // e.data.action === "archive", e.data.key === "SKU-0001"
+});
+```
 
 ---
 
-## 📤 Export CSV server-side
+## 📤 Export server-side (CSV y Excel)
 
 `GET /netgrid/:id/export?<contexto>` descarga el **dataset completo** (todas las páginas) con el
-filtro, búsqueda, orden y orden de columnas (`cols`) actual — RFC-4180, escaping de comas/comillas/saltos.
+filtro, búsqueda, orden, orden de columnas (`cols`) y columnas ocultas (`hide`) actuales. `format=csv` (default) o `format=xlsx`.
 
 ```csharp
 // sin configuración: MapNetOpenGrid() ya publica la ruta
-// GET /netgrid/employees/export?filter=department:equals:Design&sort=id
-// → Content-Disposition: attachment; filename=employees.csv
+// GET /netgrid/employees/export?filter=department:equals:Design&sort=id              → employees.csv
+// GET /netgrid/employees/export?format=xlsx&filter=department:equals:Design&sort=id  → employees.xlsx
+.WithExportFormats(GridExportFormats.Csv | GridExportFormats.Xlsx)   // default: los dos; None quita el export
+.AddColumn(p => p.Price, c => c.ExcelFormat("\"$\"#,##0.00"))         // formato de número en Excel
 ```
 
+- El toolbar trae un botón de descarga (un menú CSV / Excel si están los dos formatos) que exporta la vista actual.
+- **Streaming:** itera páginas de `MaxPageSize` y las escribe directo a la respuesta; la memoria no crece con el tamaño del export.
+- **Límite:** `.WithMaxExportRows(n)` (default `100_000`; en xlsx además el tope de Excel, 1.048.575 filas). Si el resultado lo supera, responde `422` antes de empezar a escribir.
+
+**CSV** (RFC-4180)
 - Los valores usan los formatters de columna (`Format`); `RawCellHtml` se ignora por seguridad.
-- El toolbar incluye un botón de descarga que exporta con el contexto actual del cliente.
-- Paginación transparente: itera páginas de `MaxPageSize` hasta cubrir el total.
+- **UTF-8 con BOM**, para que Excel abra bien tildes y ñ.
+- **Inyección de fórmulas:** las celdas que empiezan con `=` `+` `-` `@` (o tab/CR) llevan un `'` delante; los números como `-12.5` no se tocan.
+
+**Excel (.xlsx)** — sin dependencias: el paquete SpreadsheetML se escribe directo, en streaming.
+- **Celdas tipadas:** números como números, fechas como fechas de Excel (`yyyy-mm-dd`, con hora si la tiene), booleanos como
+  TRUE/FALSE; enums y texto como texto. El texto va como *inline string*, que Excel nunca evalúa como fórmula.
+- `.ExcelFormat("...")` por columna para el formato de número (moneda, porcentaje…); sin él, formato General.
+- Encabezado en negrita y fijo, autofiltro, anchos estimados con la primera página y nombre de hoja = título del grid.
+- Validado con el validador de Open XML SDK (0 errores) y leído con openpyxl.
 
 ---
 
@@ -607,10 +677,111 @@ builder.Services.AddNetOpenGrid(
 GET /netgrid/:id/rows?groupby=department,city&expand=department=Design|city=Lima
 ```
 
-- Toolbar con selector "Agrupar por..." + chips removibles por nivel.
+- **Panel de agrupamiento** sobre la tabla: arrastra el encabezado de una columna al panel para agrupar por ella;
+  arrastra un chip sobre otro para cambiar el orden de los niveles; la ✕ de cada chip quita ese nivel.
+  `.WithGroupPanel(false)` lo quita y deja chips simples.
+- El selector "Agrupar por..." del toolbar sigue siendo el camino con teclado.
 - Headers de grupo con chevron, conteo de filas y indentación por nivel; valores vacíos → bucket "(Vacíos)".
 - El orden de los grupos respeta el sort de la columna agrupada; los sorts restantes ordenan dentro de cada grupo.
 - Motores: in-memory y JSON agrupan en memoria; **EF Core** hace push-down de filtro+orden a SQL y construye el árbol sobre las filas coincidentes.
+
+## ➕ Agregados (SUM · AVG · MIN · MAX)
+
+Cada columna numérica declara sus funciones y el grid decide en qué filas mostrarlas. Se calculan sobre
+**todo el conjunto filtrado** (todas las páginas), no solo sobre la página visible.
+
+```csharp
+.WithAggregateRows(GridAggregateRows.Footer | GridAggregateRows.GroupHeader | GridAggregateRows.GroupFooter)
+.AddColumn(p => p.Price, c => c
+    .Format(v => v.ToString("C2", usd))
+    .Aggregate(GridAggregate.Avg | GridAggregate.Min | GridAggregate.Max))
+.AddColumn(p => p.Stock, c => c.Aggregate(GridAggregate.Sum | GridAggregate.Avg))
+```
+
+| `GridAggregateRows` | Dónde |
+|---|---|
+| `Header` | Fila "Total" justo debajo de los encabezados |
+| `Footer` | Fila "Total" después de la última fila |
+| `GroupHeader` | En la fila de cada grupo, junto a su nombre y conteo (se ve con el grupo colapsado) |
+| `GroupFooter` | Fila "Subtotal …" al final de cada grupo expandido |
+
+- Default: `Footer | GroupHeader`. `GridAggregateRows.None` las apaga; `All` las muestra todas.
+- Los valores se alinean bajo su columna; las columnas sin agregados del principio se funden en la celda de la etiqueta.
+- **Formato:** reutiliza el `.Format(...)` de la columna (`$1,234.50`). `AVG` sobre enteros muestra hasta 2 decimales.
+  `.AggregateFormat((fn, value) => ...)` lo reemplaza.
+- **Nulls:** se ignoran, como en SQL (`AVG` divide por los valores no nulos). Un conjunto vacío no muestra totales.
+- **Motores:** in-memory y JSON calculan en memoria; **EF Core** y **Npgsql** hacen push-down de los totales
+  a un solo `SELECT SUM(…), AVG(…), MIN(…), MAX(…)`. Los subtotales de grupo se calculan al armar el árbol de grupos.
+- Solo columnas numéricas: `.Aggregate(...)` sobre otro tipo falla al configurar el grid. En EF Core la columna
+  necesita el selector de expresión.
+- Etiquetas localizadas: `agg.sum`, `agg.avg`, `agg.min`, `agg.max`, `agg.total`, `agg.subtotal`.
+
+## ⌨️ Teclado y accesibilidad
+
+El cuerpo de la tabla es **una sola parada de Tab** (tabindex móvil): los links, checkboxes y chevrons de las
+filas salen del orden de Tab y se activan desde la celda.
+
+| Tecla | Acción |
+|---|---|
+| `←` `→` `↑` `↓` | Moverse entre celdas (respeta `colspan` y las columnas ocultas por breakpoint) |
+| `Home` / `End` | Primera / última celda de la fila |
+| `Ctrl+Home` / `Ctrl+End` | Primera / última celda de la página |
+| `PageUp` / `PageDown` | Página anterior / siguiente, conservando la columna |
+| `Alt+←` / `Alt+→` en un encabezado | Angosta / ensancha la columna 16 px |
+| `Enter` | Activa el control de la celda (link, checkbox); en una fila de grupo, lo expande o colapsa; en una fila clicable, abre su link; con varios controles, entra en la celda |
+| `Espacio` | Selecciona la fila; en una fila de grupo, lo expande o colapsa |
+| `↑` en la primera fila | Sube al botón de orden de esa columna; `Enter` ordena, `Shift+Enter` suma al multi-sort |
+| `↓` en un encabezado | Baja a la primera fila, en la misma columna |
+
+- Al llegar filas nuevas (orden, página, grupo) el foco vuelve a la misma fila y columna.
+- `aria-sort` en cada encabezado ordenable: `ascending` / `descending` en el orden principal, `other` en los
+  secundarios de un multi-sort y `none` en el resto. La flecha ▲▼ es `aria-hidden`.
+- La tabla conserva su semántica nativa (sin `role="grid"`): los lectores de pantalla siguen usando su
+  propia navegación de tablas, y los botones de encabezado (orden, filtro, pin) siguen accesibles con `Tab`.
+
+## 🔖 Vistas guardadas
+
+Una vista es el estado del grid con nombre: orden, filtros, búsqueda, agrupamiento, orden de columnas, columnas
+ocultas y tamaño de página (lo mismo que ya vive en la URL). El botón de vistas de la barra tiene tres secciones:
+
+- **Vista por defecto**: vuelve al grid tal como está configurado.
+- **Predefinidas**: las define el servidor y las ve todo el mundo.
+- **Mis vistas**: cada usuario guarda la vista actual con un nombre (campo al pie del menú); quedan en su navegador
+  (`localStorage`), se reemplazan si repites el nombre y se borran con ✕.
+
+```csharp
+.AddView("Delivered, biggest first", "filter=status:equals:delivered&sort=total:desc")
+.AddView("Pending by country", "filter=status:equals:pending&groupby=country")
+.WithSavedViews(false)   // quita "Mis vistas"; las predefinidas siguen
+```
+
+- Aplicar una vista reinicia primero todo el estado, así no se arrastra nada de la anterior (un filtro, una columna oculta).
+- La vista activa lleva ✓ y el botón se resalta. La página y el tamaño de página no cuentan para saber cuál está activa.
+- Las predefinidas se **validan al construir el grid**: nombres (1-60 caracteres, únicos), parámetros permitidos
+  (`sort · filter · q · groupby · expand · cols · hide · pageSize`) y que cada campo sea una columna. Un error ahí
+  lanza `GridConfigurationException` al arrancar, en vez de mostrar en silencio otra cosa.
+- Los anchos y los pines siguen siendo por navegador, no por vista.
+
+## 📜 Scroll virtual
+
+Para listas largas, en vez del paginador: un área con scroll de alto fijo donde las filas llegan del servidor por
+bloques mientras bajas, y en el DOM solo quedan los bloques cerca de lo que ves.
+
+```csharp
+.WithVirtualScroll(blockSize: 100, height: "70vh")
+```
+
+- Cada bloque es una página del endpoint de siempre (`/rows?page=N&pageSize=blockSize`), así que funciona igual con
+  in-memory, JSON, EF Core y Npgsql. El tamaño de página pasa a ser el del bloque.
+- En el DOM quedan el bloque visible y uno a cada lado; el resto son filas espaciadoras con la altura medida de cada
+  bloque (o estimada hasta medirlo), así la barra de scroll representa el total. Los bloques lejanos también se
+  descartan de memoria.
+- El encabezado queda fijo arriba. Los totales de arriba salen solo en el primer bloque y los de abajo solo en el último.
+- Cambiar orden, filtros o búsqueda vuelve al principio y cancela los bloques que estaban en camino.
+- Teclado: las flechas cruzan bloques; `PageUp`/`PageDown` avanzan una pantalla y `Ctrl+Home`/`Ctrl+End` van a la
+  primera/última fila del total, cargando lo necesario.
+- Con agrupamiento el grid vuelve a paginar (los grupos expandibles no tienen alturas uniformes).
+- El contenedor lleva `overflow-anchor: none`: sin eso, Chrome "corrige" el scroll al cambiar los bloques y salta al final.
 
 ---
 
@@ -629,7 +800,19 @@ GET /netgrid/:id/rows?groupby=department,city&expand=department=Design|city=Lima
 | `.WithTheme(name)` | `"grid"` | Compila a `netopengrid-{name}.css` |
 | `.WithMinHeight(css)` | `"64rem"` | ≈25 filas; evita el colapso al filtrar. `""` lo desactiva |
 | `.WithEmptyMessage(msg)` | `"No records found."` | Estado vacío centrado |
+| `.WithMaxExportRows(n)` | `100000` | Tope del export (CSV y xlsx); por encima responde `422` |
+| `.AddView(name, query)` | — | Vista predefinida (validada al construir) |
+| `.WithSavedViews(bool)` | `true` | Los usuarios guardan sus propias vistas |
+| `.WithExportFormats(formats)` | `Csv \| Xlsx` | Formatos del botón y del endpoint de export |
+| `.WithColumnResize(bool)` | `true` | Tiradores para redimensionar columnas |
+| `.WithColumnChooser(bool)` | `true` | Menú para mostrar/ocultar columnas |
+| `.WithVirtualScroll(blockSize, height)` | off | Scroll virtual por bloques en vez de paginador |
+| `.WithGroupPanel(bool)` | `true` | Panel para agrupar arrastrando encabezados |
+| `.WithAggregateRows(rows)` | `Footer \| GroupHeader` | Filas donde se muestran los agregados |
 | `.EnableRowSelection(keyFn)` | off | Barra flotante + export; `keyFn` debe ser estable y único |
+| `.WithRowKey(keyFn)` | — | Clave de fila sin activar la selección (la usan las acciones `Event`) |
+| `.WithRowLink(hrefFn, target?)` | — | Toda la fila es clicable |
+| `.WithRowActions(a => ...)` | — | Columna de acciones: `.Link(...)`, `.Event(...)`, `.Header(...)` |
 | `.WithNavLinks(...)` | `[]` | Navegación del shell |
 
 ### `GridColumnBuilder<T, TKey>`
@@ -644,7 +827,11 @@ GET /netgrid/:id/rows?groupby=department,city&expand=department=Design|city=Lima
 | `.AllowedOps(FilterOpSet)` | `All` | Se **intersecta** con lo soportado por el tipo |
 | `.Comparer / .Parser / .SearchMatch` | built-ins | Overrides sin reflexión |
 | `.Align / .WidthCss / .Visible` | `Start/–/true` | Presentación |
+| `.Pinned() / .PinnedRight()` | — | Fija la columna al borde izquierdo / derecho |
 | `.DataType(...)` | inferido | `Text · Numeric · Date · Boolean · Enum · Unknown` |
+| `.ExcelFormat(numFmt)` | General | Formato de número de la columna en el export xlsx |
+| `.Aggregate(GridAggregate)` | `None` | `Sum \| Avg \| Min \| Max`; solo columnas numéricas |
+| `.AggregateFormat(Func<GridAggregate,decimal,string?>)` | el `Format` de la columna | Formato propio para los agregados |
 
 ### Assets (servidos por el componente, embebidos en el ensamblado)
 
@@ -688,6 +875,8 @@ Símbolos compactos aceptados en la query: `=` `!=` `>` `>=` `<` `<=` `~` (conta
 | `groupby` | `department,city` | agrupamiento anidado (máx 3 niveles); los grupos se paginan |
 | `expand` | `department=Design\|city=Lima` | rutas de grupos desplegados (valores URL-encoded) |
 | `cols` | `email,fullName` | orden de columnas (drag & drop; validado, faltantes se agregan al final) |
+| `format` | `xlsx` | solo en `/export`: `csv` (default) o `xlsx` |
+| `hide` | `email,city` | columnas ocultas (menú de columnas; validado, nunca oculta todas) |
 
 **Respuesta** (fragmento `<tbody>` + headers):
 
@@ -796,16 +985,48 @@ dotnet test
 
 ## 🗺️ Roadmap
 
+### ✅ Completado
+
 - [x] `EFCoreGridDataSource<T>`: push-down de filtros/sort a SQL reutilizando las mismas estrategias
+- [x] `NpgsqlGridDataSource<T>`: push-down a PostgreSQL con `GridSqlMap` / `GridSqlBuilder`
 - [x] Filtros tipo Excel con conteo por valor
 - [x] Columnas fijadas (pin) y reordenables
 - [x] i18n de labels del cliente
 - [x] Agrupamiento por columna (anidado hasta 3 niveles, expand/colapse por URL)
 - [x] Export server-side genérico (CSV) como parte del componente
 
-> **✅ Roadmap completado — el componente es feature-complete.**
-> Ideas futuras: agregaciones por grupo (SUM/AVG en headers), drag de columnas al panel de grupos,
-> export Excel (xlsx), pin derecho, virtualización de filas.
+### 🐞 Correcciones y robustez
+
+- [x] Export CSV: neutralizar inyección de fórmulas (celdas que empiezan con `=` `+` `-` `@` tab/CR)
+- [x] Export CSV: BOM UTF-8 para que Excel abra bien tildes y ñ
+- [x] Export CSV: streaming a `Response.Body` + límite configurable de filas (`MaxExportRows`)
+- [x] Cliente: cada grid cancela su propia request en vuelo (`AbortController`); varios grids en una página ya no se pisan
+- [x] Cliente: arrastrar columnas no reordenaba nada, y con un orden guardado el encabezado no seguía a las filas
+- [x] Cliente: el botón de pin guardaba el estado pero no fijaba las celdas hasta la siguiente recarga de filas
+- [x] Tema oscuro: el encabezado de una columna fijada era semitransparente y se veían las columnas de abajo
+- [ ] Cliente: historial del navegador (`pushState` + `popstate`) para que "atrás" restaure la vista
+- [x] A11y: `aria-sort` en encabezados ordenables
+- [x] A11y: navegación por teclado entre celdas y páginas
+
+### ✨ Features
+
+- [x] Agregados por columna (`SUM` · `AVG` · `MIN` · `MAX`), con push-down a SQL
+  - [x] En el header de la tabla y en el footer de la tabla
+  - [x] En cada agrupación: header y footer del grupo
+- [x] Redimensionar columnas (anchos persistidos en `localStorage`)
+- [x] Menú para mostrar/ocultar columnas
+- [x] Acciones por fila y fila clicable (`WithRowLink` · `WithRowActions`)
+- [x] Export Excel (xlsx) en streaming
+- [x] Vistas guardadas (estado de URL con nombre): predefinidas + del usuario
+- [x] Drag de columnas al panel de grupos (y reordenar niveles arrastrando chips)
+- [x] Pin derecho (columnas y columna de acciones)
+- [x] Virtualización de filas (scroll virtual por bloques)
+
+### 🧪 Calidad
+
+- [ ] Tests end-to-end del cliente JS con Playwright sobre `samples/NetOpenGrid.Example`
+- [ ] Benchmarks con BenchmarkDotNet (hot path, render, pipeline in-memory)
+- [ ] Tests de `NpgsqlGridDataSource` contra PostgreSQL real (Testcontainers)
 
 ---
 

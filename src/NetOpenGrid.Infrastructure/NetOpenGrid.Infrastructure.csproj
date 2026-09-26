@@ -6,6 +6,9 @@
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="NetOpenGrid.Integration.Tests" />
+  </ItemGroup>
+  <ItemGroup>
     <EmbeddedResource Include="Assets\**" Exclude="Assets\css\**;Assets\**\*.cs" />
   </ItemGroup>
   <ItemGroup>

@@ -37,10 +37,15 @@ No virtual DOM. No reflection on the hot path. No per-request expression compila
 - [Workflows](#-workflows)
 - [EF Core (SQL push-down)](#-ef-core-sql-push-down)
 - [Excel-style filters (per-value counts)](#-excel-style-filters-per-value-counts)
-- [Pinned & reorderable columns](#-pinned--reorderable-columns)
-- [Server-side CSV export](#-server-side-csv-export)
+- [Pinned, reorderable, resizable & hideable columns](#-pinned-reorderable-resizable--hideable-columns)
+- [Clickable rows & row actions](#️-clickable-rows--row-actions)
+- [Server-side export (CSV & Excel)](#-server-side-export-csv--excel)
 - [i18n](#-i18n)
 - [Column grouping (nested)](#-column-grouping-nested)
+- [Aggregates (SUM · AVG · MIN · MAX)](#-aggregates-sum--avg--min--max)
+- [Keyboard & accessibility](#️-keyboard--accessibility)
+- [Saved views](#-saved-views)
+- [Virtual scroll](#-virtual-scroll)
 - [Configuration reference](#-configuration-reference)
 - [Column types & operators](#-column-types--operators)
 - [Client ↔ server contract](#-client--server-contract)
@@ -87,14 +92,18 @@ flowchart LR
 | | Global search | `q` with debounce, OR across `Searchable` columns |
 | ↕️ **Sorting** | Stable multi-sort | Shift-click, deterministic ties (decorated array), nulls first |
 | 🗂️ **Grouping** | Nested up to 3 levels | `groupby` + `expand` in the URL; chevron headers with counts; groups are paged |
+| ➕ **Aggregates** | SUM · AVG · MIN · MAX | Top/bottom totals and per-group subtotals over the whole filtered set; pushed down to SQL |
 | 📄 **Paging** | Server-side | `pageSize` clamping, meta via headers, full deep-linking |
 | ☑️ **Selection** | Rows + export | Floating bar, select-all, CSV of selection or the full filtered dataset |
 | 📌 **Columns** | Pin + reorder | Sticky with JS-computed offsets, drag & drop persisted in `localStorage` |
 | 🌐 **i18n** | EN/ES presets | ~39 keys, per-key overrides, `__NETGRID__.locale` blob for the client |
 | 🎨 **Theming** | Tailwind v4 | `grid`/`midnight` presets, persisted dark mode, class scanning inside C# |
 | 🔌 **Self-contained** | Embedded assets | JS + HTMX + Alpine inside the assembly, served with immutable `?v={sha}` |
-| 🔗 **Deep links** | State in URL | `page·pageSize·sort·filter·q·groupby·expand·cols` — share the exact view |
-| ♿ **A11y** | Localized aria-labels | Roles, `aria-expanded`, focus rings, `x-cloak` |
+| 🖱️ **Rows** | Clickable + actions | `WithRowLink` and `WithRowActions` (links and `netgrid:action` events for your page) |
+| 🔖 **Views** | Predefined + per user | `AddView(...)` on the server; each user saves their own in the browser |
+| 🔗 **Deep links** | State in URL | `page·pageSize·sort·filter·q·groupby·expand·cols·hide` — share the exact view |
+| ♿ **A11y** | Localized aria-labels | Roles, `aria-sort`, `aria-expanded`, focus rings, `x-cloak` |
+| ⌨️ **Keyboard** | Roving tabindex | Arrow keys across cells, PageUp/PageDown, Enter/Space; the body is a single Tab stop |
 
 ## 🧱 Stack
 
@@ -225,7 +234,7 @@ page background, max-width, padding) and renders transparent, so it blends into 
 | 🧱 Isolation | The grid's Tailwind theme (with its CSS reset) never touches your site's CSS, and yours never breaks the grid. |
 | 🔗 Same origin | Your page can size the frame to its content, so the page scrolls instead of the frame. |
 | 🔁 Deep links | Grid state lives in the query string; forward your page's query to the frame and `/products?sort=price:desc` just works. |
-| ↗️ Row actions | Links rendered with `target="_top"` navigate the whole page, not the frame. |
+| ↗️ Row actions | Links rendered with `target="_top"` navigate the whole page, not the frame; `Event` actions reach your page through `postMessage` (same origin). |
 
 Complete, runnable Razor Pages app (`dotnet new web` + these files). Open `http://localhost:PORT/products`.
 
@@ -551,31 +560,92 @@ Implemented across all three engines: in-memory (snapshot grouping), JSON (`Json
 
 ---
 
-## 📌 Pinned & reorderable columns
+## 📌 Pinned, reorderable, resizable & hideable columns
 
 ```csharp
 .AddColumn("sku", p => p.Sku, c => c.Header("SKU").Pinned())
 ```
 
-- **Pinned**: `position: sticky` on `th`/`td` with offsets computed by JS after every render/resize — the column stays visible during horizontal scroll (the selection column is always pinned).
+- **Pinned** (left or right): `position: sticky` on `th`/`td`; the column stays visible during horizontal scroll
+  (the selection column is always pinned). `.Pinned()` pins left, `.PinnedRight()` pins right, and
+  `WithRowActions(a => a.Pinned()...)` pins the actions column to the right. Each header's pin button cycles
+  **unpinned → left → right → unpinned** (the icon mirrors on the right and the label names the next step).
+  Pinned columns gather at their edge: left + the rest + right. State persists in `localStorage`, including
+  unpinning what the server pinned.
 - **Reorderable**: drag a `th` to reorder. Order persists in `localStorage` per grid and travels to the server as `cols=field1,field2,…`; the renderer validates against the whitelist (unknown fields are ignored, unlisted ones are appended in default order).
+- **Resizable**: drag a header's right edge; double-click fits it to the visible page's content, and `Alt+←` /
+  `Alt+→` on a header button changes it by 16 px. The first resize freezes every column at its current width
+  (`table-layout: fixed`, nothing jumps); what does not fit ends in "…". The minimum is what the header buttons
+  need. Widths persist per grid in `localStorage`. `.WithColumnResize(false)` turns it off.
+- **Show/hide**: the toolbar's columns button opens a list with one checkbox per column and "Show all" (the last
+  visible column cannot be unchecked). The choice travels to the server as `hide=field1,field2,…`, so rows,
+  totals, groups and the **CSV export** leave those columns out; it persists in `localStorage` and in the URL.
+  `.WithColumnChooser(false)` turns it off.
+
+## 🖱️ Clickable rows & row actions
+
+```csharp
+.EnableRowSelection(p => p.Sku)          // or .WithRowKey(p => p.Sku) if you do not want selection
+.WithRowLink(p => $"/products/{p.Sku}", target: "_top")
+.WithRowActions(a => a
+    .Link("Details", p => $"/products/{p.Sku}", target: "_top")
+    .Event("archive", "Archive", RowActionStyle.Danger, visible: p => p.Available))
+```
+
+- **Clickable row** (`WithRowLink`): a click anywhere on the row navigates. Clicks on the row's own controls
+  (checkbox, links, buttons) and text selection are ignored; `Ctrl`/`⌘`+click and middle click open a new tab. From
+  the keyboard, `Enter` on a cell without a control opens the link. `target: "_top"` leaves the iframe.
+- **Actions** (`WithRowActions`): a trailing column with each row's links and buttons.
+  - `Link(label, href, target?)` → a plain `<a href>`.
+  - `Event(name, label)` → a button that raises `netgrid:action` with `{ grid, action, key }` on the grid root
+    (it bubbles up to `document`). When the grid lives in an iframe, the same payload is posted **only** to a
+    same-origin parent. The component runs nothing on the server: your page decides (call your API, open a modal…).
+  - `style: RowActionStyle.Danger` paints them red; `visible:` hides them per row; `.Header("…")` changes the title.
+  - `Event` needs a row key (`WithRowKey` or `EnableRowSelection`); without one the grid fails at configuration.
+- **Refresh** after an action: `document.dispatchEvent(new CustomEvent('netgrid:refresh', { detail: { grid: 'products' } }))`,
+  or from the host page: `frame.contentWindow.postMessage({ type: 'netgrid:refresh', grid: 'products' }, location.origin)`.
+- **Safe URLs:** only relative, `http(s)`, `mailto` and `tel` URLs are rendered; `javascript:`, `data:` and
+  `vbscript:` are dropped (for the row link and the actions).
+- When a cell holds several controls, `Enter` steps into it, `←`/`→` walk them and `Escape` returns to the cell.
+
+```js
+// Host page with the grid in an iframe (see samples/NetOpenGrid.Example/Pages/Index.cshtml)
+window.addEventListener("message", (e) => {
+    if (e.origin !== location.origin || e.data?.type !== "netgrid:action") return;
+    // e.data.action === "archive", e.data.key === "SKU-0001"
+});
+```
 
 ---
 
-## 📤 Server-side CSV export
+## 📤 Server-side export (CSV & Excel)
 
 `GET /netgrid/:id/export?<context>` downloads the **full dataset** (all pages) with the current
-filter, search, sort and column order (`cols`) — RFC-4180 with comma/quote/newline escaping.
+filter, search, sort, column order (`cols`) and hidden columns (`hide`). `format=csv` (default) or `format=xlsx`.
 
 ```csharp
 // zero config: MapNetOpenGrid() already exposes the route
-// GET /netgrid/employees/export?filter=department:equals:Design&sort=id
-// → Content-Disposition: attachment; filename=employees.csv
+// GET /netgrid/employees/export?filter=department:equals:Design&sort=id              → employees.csv
+// GET /netgrid/employees/export?format=xlsx&filter=department:equals:Design&sort=id  → employees.xlsx
+.WithExportFormats(GridExportFormats.Csv | GridExportFormats.Xlsx)   // default: both; None removes the export
+.AddColumn(p => p.Price, c => c.ExcelFormat("\"$\"#,##0.00"))         // Excel number format
 ```
 
+- The toolbar ships a download button (a CSV / Excel menu when both formats are on) that exports the current view.
+- **Streaming:** iterates `MaxPageSize` pages and writes them straight to the response; memory stays bounded whatever the export size.
+- **Cap:** `.WithMaxExportRows(n)` (default `100_000`; xlsx is also capped at Excel's 1,048,575 rows). Larger results get a `422` before anything is written.
+
+**CSV** (RFC-4180)
 - Cell values use the column formatters (`Format`); `RawCellHtml` is ignored for safety.
-- The toolbar ships a download button that exports the client's current context.
-- Transparent paging: iterates `MaxPageSize` pages until the total is covered.
+- **UTF-8 with BOM**, so Excel opens accented characters correctly.
+- **Formula injection:** cells starting with `=` `+` `-` `@` (or tab/CR) get a leading `'`; numbers such as `-12.5` are left alone.
+
+**Excel (.xlsx)** — no dependencies: the SpreadsheetML package is written directly, streaming.
+- **Typed cells:** numbers as numbers, dates as Excel dates (`yyyy-mm-dd`, with the time when there is one), booleans as
+  TRUE/FALSE; enums and text as text. Text goes out as *inline strings*, which Excel never evaluates as formulas.
+- `.ExcelFormat("...")` per column for the number format (currency, percent…); without it, General.
+- Bold, frozen header row, autofilter, widths estimated from the first page, sheet named after the grid title.
+- Checked with the Open XML SDK validator (0 errors) and read back with openpyxl.
 
 ---
 
@@ -608,10 +678,110 @@ builder.Services.AddNetOpenGrid(
 GET /netgrid/:id/rows?groupby=department,city&expand=department=Design|city=Lima
 ```
 
-- Toolbar picker "Group by..." + removable per-level chips.
+- **Group panel** above the table: drag a column header onto the panel to group by it; drag a chip onto
+  another to reorder the levels; each chip's ✕ removes that level. `.WithGroupPanel(false)` removes it and
+  leaves plain chips.
+- The toolbar's "Group by..." picker stays as the keyboard path.
 - Group headers with chevron, row counts and per-level indentation; null values → a "(Blanks)" bucket.
 - Group order follows the grouped column's sort; remaining sorts order rows inside each group.
 - Engines: in-memory and JSON group in memory; **EF Core** pushes filter+sort down to SQL and builds the tree over the matching rows.
+
+## ➕ Aggregates (SUM · AVG · MIN · MAX)
+
+Each numeric column declares its functions and the grid decides which rows show them. They are computed
+over **the whole filtered set** (every page), not just the visible page.
+
+```csharp
+.WithAggregateRows(GridAggregateRows.Footer | GridAggregateRows.GroupHeader | GridAggregateRows.GroupFooter)
+.AddColumn(p => p.Price, c => c
+    .Format(v => v.ToString("C2", usd))
+    .Aggregate(GridAggregate.Avg | GridAggregate.Min | GridAggregate.Max))
+.AddColumn(p => p.Stock, c => c.Aggregate(GridAggregate.Sum | GridAggregate.Avg))
+```
+
+| `GridAggregateRows` | Where |
+|---|---|
+| `Header` | "Total" row right below the column headers |
+| `Footer` | "Total" row after the last row |
+| `GroupHeader` | Inside each group's row, next to its name and count (visible while collapsed) |
+| `GroupFooter` | "Subtotal …" row closing each expanded group |
+
+- Default: `Footer | GroupHeader`. `GridAggregateRows.None` turns them off; `All` shows every one.
+- Values line up under their column; the leading columns without aggregates merge into the label cell.
+- **Formatting:** reuses the column's `.Format(...)` (`$1,234.50`). `AVG` over integers shows up to 2 decimals.
+  `.AggregateFormat((fn, value) => ...)` replaces it.
+- **Nulls:** skipped, as in SQL (`AVG` divides by the non-null values). An empty set shows no totals.
+- **Engines:** in-memory and JSON compute in memory; **EF Core** and **Npgsql** push the totals down to a
+  single `SELECT SUM(…), AVG(…), MIN(…), MAX(…)`. Group subtotals are computed while the group tree is built.
+- Numeric columns only: `.Aggregate(...)` on any other type fails when the grid is configured. EF Core needs
+  the expression selector for the column.
+- Localized labels: `agg.sum`, `agg.avg`, `agg.min`, `agg.max`, `agg.total`, `agg.subtotal`.
+
+## ⌨️ Keyboard & accessibility
+
+The table body is **a single Tab stop** (roving tabindex): row links, checkboxes and chevrons leave the Tab
+order and are activated from their cell.
+
+| Key | Action |
+|---|---|
+| `←` `→` `↑` `↓` | Move between cells (colspan-aware, breakpoint-hidden columns skipped) |
+| `Home` / `End` | First / last cell of the row |
+| `Ctrl+Home` / `Ctrl+End` | First / last cell of the page |
+| `PageUp` / `PageDown` | Previous / next page, keeping the column |
+| `Alt+←` / `Alt+→` on a header | Narrows / widens the column by 16 px |
+| `Enter` | Activates the cell's control (link, checkbox); on a group row, expands or collapses it; on a clickable row, opens its link; with several controls, steps into the cell |
+| `Space` | Selects the row; on a group row, expands or collapses it |
+| `↑` on the first row | Moves up to that column's sort button; `Enter` sorts, `Shift+Enter` adds to the multi-sort |
+| `↓` on a header | Moves down to the first row, same column |
+
+- When new rows arrive (sort, page, group) focus returns to the same row and column.
+- `aria-sort` on every sortable header: `ascending` / `descending` on the primary sort, `other` on the
+  secondary ones of a multi-sort, `none` elsewhere. The ▲▼ arrow is `aria-hidden`.
+- The table keeps its native semantics (no `role="grid"`): screen readers keep their own table navigation,
+  and the header buttons (sort, filter, pin) stay reachable with `Tab`.
+
+## 🔖 Saved views
+
+A view is the grid state with a name: sort, filters, search, grouping, column order, hidden columns and page
+size (the same state the URL already carries). The toolbar's views button has three sections:
+
+- **Default view**: back to the grid as configured.
+- **Predefined**: defined on the server, everyone sees them.
+- **My views**: each user saves the current view under a name (field at the bottom of the menu); they live in
+  their browser (`localStorage`), a repeated name replaces the old one, and ✕ deletes them.
+
+```csharp
+.AddView("Delivered, biggest first", "filter=status:equals:delivered&sort=total:desc")
+.AddView("Pending by country", "filter=status:equals:pending&groupby=country")
+.WithSavedViews(false)   // removes "My views"; predefined ones stay
+```
+
+- Applying a view resets all state first, so nothing from the previous one leaks in (a filter, a hidden column).
+- The active view gets a ✓ and the button is highlighted. Page and page size do not decide which view is active.
+- Predefined views are **validated when the grid is built**: names (1-60 characters, unique), allowed parameters
+  (`sort · filter · q · groupby · expand · cols · hide · pageSize`) and every field being a column. A mistake
+  throws `GridConfigurationException` at startup instead of silently showing something else.
+- Widths and pins stay per browser, not per view.
+
+## 📜 Virtual scroll
+
+For long lists, instead of the pager: a fixed-height scroll area where rows arrive from the server in blocks as
+you scroll down, and only the blocks near the viewport stay in the DOM.
+
+```csharp
+.WithVirtualScroll(blockSize: 100, height: "70vh")
+```
+
+- Each block is a page of the usual endpoint (`/rows?page=N&pageSize=blockSize`), so it works the same with
+  in-memory, JSON, EF Core and Npgsql. The page size becomes the block size.
+- The DOM keeps the visible block and one on each side; the rest are spacer rows with each block's measured
+  height (estimated until measured), so the scrollbar reflects the total. Far blocks are dropped from memory too.
+- The header stays on top. Top totals only open the first block and bottom totals only close the last one.
+- Changing sort, filters or search goes back to the top and cancels blocks in flight.
+- Keyboard: arrows cross blocks; `PageUp`/`PageDown` move one screen and `Ctrl+Home`/`Ctrl+End` go to the
+  first/last row of the whole set, loading what is needed.
+- Grouped views page again (expandable groups have no uniform heights).
+- The container has `overflow-anchor: none`: without it Chrome "fixes" the scroll when blocks change and jumps to the end.
 
 ---
 
@@ -630,7 +800,19 @@ GET /netgrid/:id/rows?groupby=department,city&expand=department=Design|city=Lima
 | `.WithTheme(name)` | `"grid"` | Compiles to `netopengrid-{name}.css` |
 | `.WithMinHeight(css)` | `"64rem"` | ≈25 rows; prevents collapse while filtering. `""` disables it |
 | `.WithEmptyMessage(msg)` | `"No records found."` | Centered empty state |
+| `.WithMaxExportRows(n)` | `100000` | Export cap (CSV and xlsx); above it the endpoint returns `422` |
+| `.AddView(name, query)` | — | Predefined view (validated at build) |
+| `.WithSavedViews(bool)` | `true` | Users save their own views |
+| `.WithExportFormats(formats)` | `Csv \| Xlsx` | Formats offered by the export button and endpoint |
+| `.WithColumnResize(bool)` | `true` | Column resize handles |
+| `.WithColumnChooser(bool)` | `true` | Show/hide columns menu |
+| `.WithVirtualScroll(blockSize, height)` | off | Block-based virtual scroll instead of the pager |
+| `.WithGroupPanel(bool)` | `true` | Panel to group by dragging headers |
+| `.WithAggregateRows(rows)` | `Footer \| GroupHeader` | Rows that show the aggregates |
 | `.EnableRowSelection(keyFn)` | off | Floating bar + export; `keyFn` must be stable and unique |
+| `.WithRowKey(keyFn)` | — | Row key without turning selection on (used by `Event` actions) |
+| `.WithRowLink(hrefFn, target?)` | — | The whole row is clickable |
+| `.WithRowActions(a => ...)` | — | Actions column: `.Link(...)`, `.Event(...)`, `.Header(...)` |
 | `.WithNavLinks(...)` | `[]` | Shell navigation |
 
 ### `GridColumnBuilder<T, TKey>`
@@ -645,7 +827,11 @@ GET /netgrid/:id/rows?groupby=department,city&expand=department=Design|city=Lima
 | `.AllowedOps(FilterOpSet)` | `All` | **Intersected** with what the type supports |
 | `.Comparer / .Parser / .SearchMatch` | built-ins | Reflection-free overrides |
 | `.Align / .WidthCss / .Visible` | `Start/–/true` | Presentation |
+| `.Pinned() / .PinnedRight()` | — | Pins the column to the left / right edge |
 | `.DataType(...)` | inferred | `Text · Numeric · Date · Boolean · Enum · Unknown` |
+| `.ExcelFormat(numFmt)` | General | The column's number format in xlsx exports |
+| `.Aggregate(GridAggregate)` | `None` | `Sum \| Avg \| Min \| Max`; numeric columns only |
+| `.AggregateFormat(Func<GridAggregate,decimal,string?>)` | the column's `Format` | Custom display for the aggregates |
 
 ### Assets (served by the component, embedded in the assembly)
 
@@ -689,6 +875,8 @@ Compact symbols accepted in the query: `=` `!=` `>` `>=` `<` `<=` `~` (contains)
 | `groupby` | `department,city` | nested grouping (max 3 levels); groups are paged |
 | `expand` | `department=Design\|city=Lima` | expanded group paths (URL-encoded values) |
 | `cols` | `email,fullName` | column order (drag & drop; validated, missing ones appended) |
+| `format` | `xlsx` | `/export` only: `csv` (default) or `xlsx` |
+| `hide` | `email,city` | hidden columns (columns menu; validated, never hides them all) |
 
 **Response** (`<tbody>` fragment + headers):
 
@@ -798,16 +986,48 @@ dotnet test
 
 ## 🗺️ Roadmap
 
+### ✅ Done
+
 - [x] `EFCoreGridDataSource<T>`: filter/sort push-down to SQL reusing the same strategies
+- [x] `NpgsqlGridDataSource<T>`: PostgreSQL push-down via `GridSqlMap` / `GridSqlBuilder`
 - [x] Excel-style filters with per-value counts
 - [x] Pinned and reorderable columns
 - [x] Client label i18n
 - [x] Column grouping (nested up to 3 levels, URL-driven expand/collapse)
 - [x] Generic server-side export (CSV) as part of the component
 
-> **✅ Roadmap completed — the component is feature-complete.**
-> Future ideas: per-group aggregations (SUM/AVG in headers), drag columns into the group panel,
-> Excel (xlsx) export, right-side pinning, row virtualization.
+### 🐞 Fixes & hardening
+
+- [x] CSV export: neutralize formula injection (cells starting with `=` `+` `-` `@` tab/CR)
+- [x] CSV export: UTF-8 BOM so Excel opens accented characters correctly
+- [x] CSV export: stream to `Response.Body` + configurable row cap (`MaxExportRows`)
+- [x] Client: each grid cancels its own in-flight request (`AbortController`); several grids on one page no longer clobber each other
+- [x] Client: dragging columns did not reorder anything, and with a saved order the header did not follow the rows
+- [x] Client: the pin button saved the state but did not stick the cells until the next rows reload
+- [x] Dark theme: a pinned column's header was translucent and the columns underneath showed through
+- [ ] Client: browser history (`pushState` + `popstate`) so "back" restores the view
+- [x] A11y: `aria-sort` on sortable headers
+- [x] A11y: keyboard navigation across cells and pages
+
+### ✨ Features
+
+- [x] Per-column aggregates (`SUM` · `AVG` · `MIN` · `MAX`), pushed down to SQL
+  - [x] In the table header and the table footer
+  - [x] In every group: group header and group footer
+- [x] Column resizing (widths persisted in `localStorage`)
+- [x] Show/hide columns menu
+- [x] Row actions and clickable rows (`WithRowLink` · `WithRowActions`)
+- [x] Streaming Excel (xlsx) export
+- [x] Saved views (named URL state): predefined + per user
+- [x] Drag columns into the group panel (and reorder levels by dragging chips)
+- [x] Right-side pinning (columns and the actions column)
+- [x] Row virtualization (block-based virtual scroll)
+
+### 🧪 Quality
+
+- [ ] End-to-end tests for the JS client with Playwright over `samples/NetOpenGrid.Example`
+- [ ] BenchmarkDotNet benchmarks (hot path, rendering, in-memory pipeline)
+- [ ] `NpgsqlGridDataSource` tests against real PostgreSQL (Testcontainers)
 
 ---
 

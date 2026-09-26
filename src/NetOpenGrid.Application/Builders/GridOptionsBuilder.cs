@@ -25,9 +25,23 @@ public sealed class GridOptionsBuilder<T>
     private string _theme = "grid";
     private string _minHeight = "64rem";
     private int _filterValuesLimit = 200;
+    private int _maxExportRows = 100_000;
+    private GridExportFormats _exportFormats = GridExportFormats.All;
+    private readonly List<(string Name, string Query)> _views = [];
+    private bool _enableSavedViews = true;
+    private bool _enableColumnResize = true;
+    private bool _enableColumnChooser = true;
+    private bool _enableGroupPanel = true;
+    private GridVirtualScroll? _virtualScroll;
+    private GridAggregateRows _aggregateRows = GridAggregateRows.Footer | GridAggregateRows.GroupHeader;
     private string _emptyMessage = "No records found.";
     private Func<T, string?>? _rowKey;
     private bool _enableRowSelection;
+    private Func<T, string?>? _rowLink;
+    private string? _rowLinkTarget;
+    private IReadOnlyList<GridRowAction<T>> _rowActions = [];
+    private string? _rowActionsHeader;
+    private bool _rowActionsPinned;
     private List<GridNavLink> _navLinks = [];
 
     public GridOptionsBuilder<T> WithId(string id)
@@ -92,9 +106,127 @@ public sealed class GridOptionsBuilder<T>
         return this;
     }
 
+    /// <summary>
+    /// Replaces the pager with virtual scrolling: a viewport of <paramref name="height"/> (CSS) that
+    /// loads rows in blocks of <paramref name="blockSize"/> while scrolling. The page size becomes the
+    /// block size (and MaxPageSize grows to fit it). Grouped views keep paging.
+    /// </summary>
+    public GridOptionsBuilder<T> WithVirtualScroll(int blockSize = 100, string height = "70vh")
+    {
+        if (blockSize is < 20 or > 1000)
+        {
+            throw new GridConfigurationException("Virtual scroll blockSize must be between 20 and 1000.");
+        }
+
+        ArgumentException.ThrowIfNullOrWhiteSpace(height);
+        _virtualScroll = new GridVirtualScroll(blockSize, height.Trim());
+        _maxPageSize = Math.Max(_maxPageSize, blockSize);
+        _defaultPageSize = blockSize;
+        _pageSizeChoices = [blockSize];
+        return this;
+    }
+
+    /// <summary>Group panel above the table (on by default); off falls back to plain group chips.</summary>
+    public GridOptionsBuilder<T> WithGroupPanel(bool enabled = true)
+    {
+        _enableGroupPanel = enabled;
+        return this;
+    }
+
+    /// <summary>Toolbar menu to show/hide columns (on by default).</summary>
+    public GridOptionsBuilder<T> WithColumnChooser(bool enabled = true)
+    {
+        _enableColumnChooser = enabled;
+        return this;
+    }
+
+    /// <summary>Column resizing from the header edge (on by default; widths persist per browser).</summary>
+    public GridOptionsBuilder<T> WithColumnResize(bool enabled = true)
+    {
+        _enableColumnResize = enabled;
+        return this;
+    }
+
+    /// <summary>Where aggregate rows are rendered (default: table footer + group headers).</summary>
+    public GridOptionsBuilder<T> WithAggregateRows(GridAggregateRows rows)
+    {
+        _aggregateRows = rows;
+        return this;
+    }
+
+    /// <summary>
+    /// A predefined view every user sees, as the grid's own query string
+    /// (e.g. <c>"filter=status:equals:delivered&amp;sort=total:desc"</c>). Validated at Build().
+    /// </summary>
+    public GridOptionsBuilder<T> AddView(string name, string query)
+    {
+        _views.Add((name, query));
+        return this;
+    }
+
+    /// <summary>Lets users save their own views in the browser (on by default).</summary>
+    public GridOptionsBuilder<T> WithSavedViews(bool enabled = true)
+    {
+        _enableSavedViews = enabled;
+        return this;
+    }
+
+    private IReadOnlyList<GridSavedView> BuildViews()
+    {
+        var fields = new HashSet<string>(_columns.Select(static c => c.Field), StringComparer.Ordinal);
+        var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        return _views.Select(v => GridSavedViewValidator.Validate(v.Name, v.Query, fields, names)).ToArray();
+    }
+
+    /// <summary>Export formats offered (default CSV and xlsx); <see cref="GridExportFormats.None"/> removes the export.</summary>
+    public GridOptionsBuilder<T> WithExportFormats(GridExportFormats formats)
+    {
+        _exportFormats = formats;
+        return this;
+    }
+
+    /// <summary>Row cap for the built-in CSV export; larger result sets are rejected up front.</summary>
+    public GridOptionsBuilder<T> WithMaxExportRows(int maxRows)
+    {
+        _maxExportRows = Math.Max(maxRows, 1);
+        return this;
+    }
+
     public GridOptionsBuilder<T> WithEmptyMessage(string message)
     {
         _emptyMessage = message;
+        return this;
+    }
+
+    /// <summary>Stable, unique key per row (used by row actions; EnableRowSelection sets it too).</summary>
+    public GridOptionsBuilder<T> WithRowKey(Func<T, string?> rowKey)
+    {
+        ArgumentNullException.ThrowIfNull(rowKey);
+        _rowKey = rowKey;
+        return this;
+    }
+
+    /// <summary>
+    /// Makes the whole row clickable. Clicks on the row's own controls, text selection and
+    /// unsafe URL schemes are ignored; Ctrl/Cmd+click and middle click open a new tab.
+    /// </summary>
+    public GridOptionsBuilder<T> WithRowLink(Func<T, string?> href, string? target = null)
+    {
+        ArgumentNullException.ThrowIfNull(href);
+        _rowLink = href;
+        _rowLinkTarget = string.IsNullOrWhiteSpace(target) ? null : target;
+        return this;
+    }
+
+    /// <summary>Trailing column of per-row links and event buttons.</summary>
+    public GridOptionsBuilder<T> WithRowActions(Action<GridRowActionsBuilder<T>> configure)
+    {
+        ArgumentNullException.ThrowIfNull(configure);
+        var builder = new GridRowActionsBuilder<T>();
+        configure(builder);
+        _rowActions = builder.Build();
+        _rowActionsHeader = builder.HeaderText;
+        _rowActionsPinned = builder.IsPinned;
         return this;
     }
 
@@ -170,9 +302,23 @@ public sealed class GridOptionsBuilder<T>
             Theme = _theme,
             MinHeight = _minHeight,
             FilterValuesLimit = _filterValuesLimit,
+            MaxExportRows = _maxExportRows,
+            ExportFormats = _exportFormats,
+            Views = BuildViews(),
+            EnableSavedViews = _enableSavedViews,
+            EnableColumnResize = _enableColumnResize,
+            EnableColumnChooser = _enableColumnChooser,
+            EnableGroupPanel = _enableGroupPanel,
+            VirtualScroll = _virtualScroll,
+            AggregateRows = _aggregateRows,
             EmptyMessage = _emptyMessage,
             EnableRowSelection = _enableRowSelection,
             RowKey = _rowKey,
+            RowLink = _rowLink,
+            RowLinkTarget = _rowLinkTarget,
+            RowActions = _rowActions,
+            RowActionsHeader = _rowActionsHeader,
+            RowActionsPinned = _rowActionsPinned,
             NavLinks = _navLinks.ToArray()
         };
     }
@@ -232,6 +378,12 @@ public sealed class GridOptionsBuilder<T>
         if (_enableRowSelection && _rowKey is null)
         {
             throw new GridConfigurationException("EnableRowSelection requires a RowKey function.");
+        }
+
+        if (_rowActions.Any(static a => a.Kind == RowActionKind.Event) && _rowKey is null)
+        {
+            throw new GridConfigurationException(
+                "Row actions of kind Event need a row key: call WithRowKey(...) or EnableRowSelection(...).");
         }
     }
 

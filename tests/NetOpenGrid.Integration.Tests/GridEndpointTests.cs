@@ -92,7 +92,7 @@ public class GridEndpointTests : IClassFixture<HostFactory>
         Assert.Contains("/css/netopengrid-grid.css", html);
         Assert.Contains("__NETGRID__.initial[\"employees\"]", html);
         Assert.Contains("];__NETGRID__.locale=", html);   // state script: columns array closed before locale blob
-        Assert.StartsWith("<tbody id=\"employees-body\">", html[(html.IndexOf("<tbody", StringComparison.Ordinal))..]);
+        Assert.StartsWith("<tbody id=\"employees-body\" ", html[(html.IndexOf("<tbody", StringComparison.Ordinal))..]);
     }
 
     [Fact]
@@ -195,7 +195,7 @@ public class GridEndpointTests : IClassFixture<HostFactory>
         Assert.Contains("data-pin=\"__select\"", html);
         Assert.Contains("draggable=\"true\"", html);
         Assert.Contains("sticky z-30", html);
-        Assert.Contains("\"pin\":true", html);
+        Assert.Contains("\"pin\":\"left\"", html);   // "left" / "right" / false (the client still reads the old true)
     }
 
     [Fact]

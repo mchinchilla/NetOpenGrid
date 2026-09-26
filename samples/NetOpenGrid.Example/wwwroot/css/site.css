@@ -118,3 +118,10 @@ code { font-size: 0.9em; }
 .details dd { margin: 0; }
 
 .site-footer { margin: 32px auto; color: var(--muted); font-size: 0.85em; }
+
+.toast {
+    position: fixed; right: 24px; bottom: 24px; z-index: 10;
+    padding: 10px 14px; border-radius: 10px;
+    background: #111827; color: #f9fafb; font-size: .9rem;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, .25);
+}

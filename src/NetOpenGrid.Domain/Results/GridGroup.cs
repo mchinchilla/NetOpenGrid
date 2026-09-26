@@ -13,7 +13,11 @@ public sealed record GridGroup<T>(
     int Level,
     int Count,
     IReadOnlyList<GridGroup<T>> Children,
-    IReadOnlyList<T> Rows);
+    IReadOnlyList<T> Rows)
+{
+    /// <summary>Subtotals over every row of the group (all of them, expanded or not).</summary>
+    public GridAggregates Aggregates { get; init; } = GridAggregates.Empty;
+}
 
 /// <summary>Paged slice of top-level groups (grouping active: pages contain groups, not rows).</summary>
 public sealed record GroupedPageResult<T>(

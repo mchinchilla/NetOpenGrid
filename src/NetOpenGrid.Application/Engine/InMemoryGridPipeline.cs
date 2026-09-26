@@ -151,7 +151,7 @@ internal static class InMemoryGridPipeline
         return predicates;
     }
 
-    private static List<T> ApplyPredicates<T>(IReadOnlyList<T> source, List<Func<T, bool>> predicates)
+    internal static List<T> ApplyPredicates<T>(IReadOnlyList<T> source, List<Func<T, bool>> predicates)
     {
         if (predicates.Count == 0)
         {

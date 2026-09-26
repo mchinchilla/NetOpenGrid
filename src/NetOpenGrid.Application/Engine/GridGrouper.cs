@@ -30,7 +30,11 @@ public static class GridGrouper<T>
         var ordered = StableSort.Sort(rows, BindGroupSorts(groupColumns, query.Sorts));
         var expanded = query.Expanded.ToHashSet(StringComparer.Ordinal);
 
-        var topLevel = BuildLevel(ordered, 0, string.Empty, groupColumns, expanded);
+        var aggregateColumns = options.ShowsAggregates(GridAggregateRows.GroupHeader | GridAggregateRows.GroupFooter)
+            ? options.AggregateColumns
+            : [];
+
+        var topLevel = BuildLevel(ordered, 0, string.Empty, groupColumns, expanded, aggregateColumns);
         var totalGroups = topLevel.Count;
 
         var pageGroups = topLevel
@@ -78,7 +82,8 @@ public static class GridGrouper<T>
         int level,
         string parentPath,
         IReadOnlyList<GridColumn<T>> columns,
-        HashSet<string> expanded)
+        HashSet<string> expanded,
+        IReadOnlyList<GridColumn<T>> aggregateColumns)
     {
         var keyFormat = columns[level].RawKeyFormat!;
         var field = columns[level].Field;
@@ -107,7 +112,7 @@ public static class GridGrouper<T>
             {
                 if (level + 1 < columns.Count)
                 {
-                    children = BuildLevel(bucket, level + 1, path, columns, expanded);
+                    children = BuildLevel(bucket, level + 1, path, columns, expanded, aggregateColumns);
                 }
                 else
                 {
@@ -121,7 +126,10 @@ public static class GridGrouper<T>
                 level,
                 bucket.Count,
                 children,
-                leafRows));
+                leafRows)
+            {
+                Aggregates = aggregateColumns.Count > 0 ? GridAggregator.Compute(bucket, aggregateColumns) : GridAggregates.Empty
+            });
         }
 
         foreach (var row in rows)

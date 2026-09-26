@@ -8,8 +8,8 @@
     <h1>Product catalog</h1>
     <p>
         Typed in-memory grid. Try the Excel-style filter on <em>Category</em>, shift-click two headers
-        for a multi-sort, drag a header to reorder, pick rows to export them, or open a product with
-        <em>Details</em>.
+        for a multi-sort, drag a header to reorder, pick rows to export them, or open a product by
+        clicking its row. <em>Archive</em> is an event action handled by this page.
     </p>
 </section>
 
@@ -17,3 +17,21 @@
     @* ?embed=1 drops the standalone chrome (site header, page background, padding). *@
     <iframe class="grid-frame" data-netgrid src="/netgrid/products?embed=1" title="Product catalog"></iframe>
 </div>
+
+<div class="toast" role="status" aria-live="polite" hidden></div>
+
+@* Row actions of kind Event reach the host page as a same-origin postMessage (the grid is in an iframe).
+   A real app would call its API here, then ask the grid for fresh rows. *@
+<script>
+    const toast = document.querySelector(".toast");
+    window.addEventListener("message", (e) => {
+        if (e.origin !== location.origin || e.data?.type !== "netgrid:action") return;
+        toast.textContent = `${e.data.action} ${e.data.key} (demo: nothing was changed)`;
+        toast.hidden = false;
+        clearTimeout(toast.timer);
+        toast.timer = setTimeout(() => { toast.hidden = true; }, 3000);
+
+        const frame = document.querySelector("iframe[data-netgrid]");
+        frame.contentWindow.postMessage({ type: "netgrid:refresh", grid: e.data.grid }, location.origin);
+    });
+</script>

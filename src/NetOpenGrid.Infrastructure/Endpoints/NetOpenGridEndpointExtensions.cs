@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
 using NetOpenGrid.Application.Binding;
+using NetOpenGrid.Application.Options;
 using NetOpenGrid.Infrastructure.Assets;
 using NetOpenGrid.Infrastructure.Binding;
 using NetOpenGrid.Infrastructure.Runtime;
@@ -76,13 +77,30 @@ public static class NetOpenGridEndpointExtensions
                 return Results.NotFound($"Unknown grid '{gridId}'.");
             }
 
-            var (fileName, csv) = await runtime.RenderExportAsync(http.Request.ToGridRequestValues(), cancellationToken);
+            var format = http.Request.Query["format"].ToString().ToLowerInvariant() switch
+            {
+                "" or "csv" => GridExportFormats.Csv,
+                "xlsx" => GridExportFormats.Xlsx,
+                _ => GridExportFormats.None
+            };
+
+            if (format == GridExportFormats.None || (runtime.ExportFormats & format) == 0)
+            {
+                return Results.Text("This export format is not available for this grid.", "text/plain; charset=utf-8", statusCode: StatusCodes.Status400BadRequest);
+            }
+
+            var export = await runtime.CreateExportAsync(http.Request.ToGridRequestValues(), format, cancellationToken);
             http.Response.Headers.CacheControl = "no-store";
 
-            return Results.File(
-                System.Text.Encoding.UTF8.GetBytes(csv),
-                "text/csv; charset=utf-8",
-                fileDownloadName: fileName);
+            if (export.ExceedsLimit)
+            {
+                return Results.Text(export.LimitMessage, "text/plain; charset=utf-8", statusCode: StatusCodes.Status422UnprocessableEntity);
+            }
+
+            return Results.Stream(
+                output => export.WriteToAsync(output, cancellationToken),
+                export.ContentType,
+                fileDownloadName: export.FileName);
         });
 
         data.MapGet("/{gridId}", async (string gridId, HttpContext http, CancellationToken cancellationToken) =>

@@ -23,8 +23,22 @@ public sealed class JsonGridOptionsBuilder
     private string _theme = "grid";
     private string _minHeight = "64rem";
     private int _filterValuesLimit = 200;
+    private int _maxExportRows = 100_000;
+    private GridExportFormats _exportFormats = GridExportFormats.All;
+    private readonly List<(string Name, string Query)> _views = [];
+    private bool _enableSavedViews = true;
+    private bool _enableColumnResize = true;
+    private bool _enableColumnChooser = true;
+    private bool _enableGroupPanel = true;
+    private GridVirtualScroll? _virtualScroll;
+    private GridAggregateRows _aggregateRows = GridAggregateRows.Footer | GridAggregateRows.GroupHeader;
     private string _emptyMessage = "No records found.";
     private Func<JsonElement, string?>? _rowKey;
+    private Func<JsonElement, string?>? _rowLink;
+    private string? _rowLinkTarget;
+    private IReadOnlyList<GridRowAction<JsonElement>> _rowActions = [];
+    private string? _rowActionsHeader;
+    private bool _rowActionsPinned;
     private bool _enableRowSelection;
     private List<GridNavLink> _navLinks = [];
 
@@ -38,8 +52,86 @@ public sealed class JsonGridOptionsBuilder
     public JsonGridOptionsBuilder WithTheme(string themeName) { _theme = themeName; return this; }
     public JsonGridOptionsBuilder WithMinHeight(string minHeight) { _minHeight = minHeight?.Trim() ?? string.Empty; return this; }
     public JsonGridOptionsBuilder WithFilterValuesLimit(int limit) { _filterValuesLimit = Math.Max(limit, 1); return this; }
+    /// <summary>Virtual scrolling instead of paging (see <c>GridOptionsBuilder.WithVirtualScroll</c>).</summary>
+    public JsonGridOptionsBuilder WithVirtualScroll(int blockSize = 100, string height = "70vh")
+    {
+        if (blockSize is < 20 or > 1000)
+        {
+            throw new GridConfigurationException("Virtual scroll blockSize must be between 20 and 1000.");
+        }
+
+        ArgumentException.ThrowIfNullOrWhiteSpace(height);
+        _virtualScroll = new GridVirtualScroll(blockSize, height.Trim());
+        _maxPageSize = Math.Max(_maxPageSize, blockSize);
+        _defaultPageSize = blockSize;
+        _pageSizeChoices = [blockSize];
+        return this;
+    }
+
+    public JsonGridOptionsBuilder WithGroupPanel(bool enabled = true) { _enableGroupPanel = enabled; return this; }
+    public JsonGridOptionsBuilder WithColumnChooser(bool enabled = true) { _enableColumnChooser = enabled; return this; }
+    public JsonGridOptionsBuilder WithColumnResize(bool enabled = true) { _enableColumnResize = enabled; return this; }
+    public JsonGridOptionsBuilder WithAggregateRows(GridAggregateRows rows) { _aggregateRows = rows; return this; }
+    /// <summary>
+    /// A predefined view every user sees, as the grid's own query string
+    /// (e.g. <c>"filter=status:equals:delivered&amp;sort=total:desc"</c>). Validated at Build().
+    /// </summary>
+    public JsonGridOptionsBuilder AddView(string name, string query)
+    {
+        _views.Add((name, query));
+        return this;
+    }
+
+    /// <summary>Lets users save their own views in the browser (on by default).</summary>
+    public JsonGridOptionsBuilder WithSavedViews(bool enabled = true)
+    {
+        _enableSavedViews = enabled;
+        return this;
+    }
+
+    private IReadOnlyList<GridSavedView> BuildViews()
+    {
+        var fields = new HashSet<string>(_columns.Select(static c => c.Field), StringComparer.Ordinal);
+        var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        return _views.Select(v => GridSavedViewValidator.Validate(v.Name, v.Query, fields, names)).ToArray();
+    }
+
+    public JsonGridOptionsBuilder WithExportFormats(GridExportFormats formats) { _exportFormats = formats; return this; }
+    public JsonGridOptionsBuilder WithMaxExportRows(int maxRows) { _maxExportRows = Math.Max(maxRows, 1); return this; }
     public JsonGridOptionsBuilder WithEmptyMessage(string message) { _emptyMessage = message; return this; }
     public JsonGridOptionsBuilder WithNavLinks(params GridNavLink[] links) { _navLinks = [.. links]; return this; }
+
+    /// <summary>Stable, unique key per row (used by row actions; EnableRowSelection sets it too).</summary>
+    public JsonGridOptionsBuilder WithRowKey(Func<JsonElement, string?> rowKey)
+    {
+        ArgumentNullException.ThrowIfNull(rowKey);
+        _rowKey = rowKey;
+        return this;
+    }
+
+    /// <summary>
+    /// Makes the whole row clickable. Clicks on the row's own controls, text selection and
+    /// unsafe URL schemes are ignored; Ctrl/Cmd+click and middle click open a new tab.
+    /// </summary>
+    public JsonGridOptionsBuilder WithRowLink(Func<JsonElement, string?> href, string? target = null)
+    {
+        ArgumentNullException.ThrowIfNull(href);
+        _rowLink = href;
+        _rowLinkTarget = string.IsNullOrWhiteSpace(target) ? null : target;
+        return this;
+    }
+
+    /// <summary>Trailing column of per-row links and event buttons.</summary>
+    public JsonGridOptionsBuilder WithRowActions(Action<GridRowActionsBuilder<JsonElement>> configure)
+    {
+        ArgumentNullException.ThrowIfNull(configure);
+        var builder = new GridRowActionsBuilder<JsonElement>();
+        configure(builder);
+        _rowActions = builder.Build();
+        _rowActionsHeader = builder.HeaderText;
+        _rowActionsPinned = builder.IsPinned;
+        return this;
+    }
 
     public JsonGridOptionsBuilder EnableRowSelection(Func<JsonElement, string?> rowKey)
     {
@@ -80,6 +172,12 @@ public sealed class JsonGridOptionsBuilder
             throw new GridConfigurationException("EnableRowSelection requires a RowKey function.");
         }
 
+        if (_rowActions.Any(static a => a.Kind == RowActionKind.Event) && _rowKey is null)
+        {
+            throw new GridConfigurationException(
+                "Row actions of kind Event need a row key: call WithRowKey(...) or EnableRowSelection(...).");
+        }
+
         if (_pageSizeChoices.Length == 0 || _pageSizeChoices.Any(static c => c is < 1))
         {
             throw new GridConfigurationException("Invalid page size choices.");
@@ -98,9 +196,23 @@ public sealed class JsonGridOptionsBuilder
             Theme = _theme,
             MinHeight = _minHeight,
             FilterValuesLimit = _filterValuesLimit,
+            MaxExportRows = _maxExportRows,
+            ExportFormats = _exportFormats,
+            Views = BuildViews(),
+            EnableSavedViews = _enableSavedViews,
+            EnableColumnResize = _enableColumnResize,
+            EnableColumnChooser = _enableColumnChooser,
+            EnableGroupPanel = _enableGroupPanel,
+            VirtualScroll = _virtualScroll,
+            AggregateRows = _aggregateRows,
             EmptyMessage = _emptyMessage,
             EnableRowSelection = _enableRowSelection,
             RowKey = _rowKey,
+            RowLink = _rowLink,
+            RowLinkTarget = _rowLinkTarget,
+            RowActions = _rowActions,
+            RowActionsHeader = _rowActionsHeader,
+            RowActionsPinned = _rowActionsPinned,
             NavLinks = _navLinks.ToArray()
         };
     }

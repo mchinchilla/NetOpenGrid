@@ -89,7 +89,7 @@ namespace NetOpenGrid.Persistence.Npgsql;
 /// mismatch.</para>
 /// </summary>
 public sealed class NpgsqlGridDataSource<TRow>
-    : IGridDataSource<TRow>, IGridValueCountSource<TRow>, IGridGroupingSource<TRow>
+    : IGridDataSource<TRow>, IGridValueCountSource<TRow>, IGridGroupingSource<TRow>, IGridAggregateSource<TRow>
     where TRow : class
 {
     private readonly NpgsqlDataSource _dataSource;
@@ -220,6 +220,44 @@ public sealed class NpgsqlGridDataSource<TRow>
         var rows = await MapRowsAsync<TRow>(reader, cancellationToken);
 
         return GridGrouper<TRow>.Group(rows, query, _options);
+    }
+
+    /// <summary>Grand totals over the filtered set: one SELECT SUM/AVG/MIN/MAX, pushed down.</summary>
+    public async ValueTask<GridAggregates> GetAggregatesAsync(GridQuery query, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(query);
+
+        var (where, parameters) = GridSqlBuilder.BuildWhere(_map, query, null);
+        var (sql, slots) = GridSqlBuilder.BuildAggregateSelect(
+            _map, where, _options.AggregateColumns.Select(static c => (c.Field, c.Aggregates)));
+
+        if (slots.Count == 0)
+        {
+            return GridAggregates.Empty;
+        }
+
+        await using var conn = await _dataSource.OpenConnectionAsync(cancellationToken);
+        await using var cmd = CreateCommand(conn, sql, parameters);
+        await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
+        await reader.ReadAsync(cancellationToken);   // an aggregate SELECT without GROUP BY always returns one row
+
+        var byField = new Dictionary<string, GridAggregateValues>(StringComparer.Ordinal);
+        for (var i = 0; i < slots.Count; i++)
+        {
+            var (field, function) = slots[i];
+            decimal? value = await reader.IsDBNullAsync(i, cancellationToken) ? null : reader.GetDecimal(i);
+            var current = byField.GetValueOrDefault(field) ?? new GridAggregateValues(null, null, null, null);
+
+            byField[field] = function switch
+            {
+                GridAggregate.Sum => current with { Sum = value },
+                GridAggregate.Avg => current with { Avg = value },
+                GridAggregate.Min => current with { Min = value },
+                _ => current with { Max = value }
+            };
+        }
+
+        return new GridAggregates(byField);
     }
 
     private async Task<int> CountAsync(

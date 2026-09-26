@@ -60,6 +60,9 @@ public sealed class GridColumn<T>
     /// <summary>Pinned columns stay visible during horizontal scroll (CSS sticky, left edge).</summary>
     public bool IsPinned { get; init; }
 
+    /// <summary>Pinned columns on the right edge stay visible during horizontal scroll (CSS sticky, right edge).</summary>
+    public bool IsPinnedRight { get; init; }
+
     public ISortStrategy<T>? SortStrategy { get; init; }
     public IFilterStrategyFactory<T>? FilterFactory { get; init; }
     public ISearchStrategy<T>? SearchStrategy { get; init; }
@@ -73,6 +76,26 @@ public sealed class GridColumn<T>
     public ColumnDataType DataType { get; init; } = ColumnDataType.Unknown;
     public ColumnAlign Align { get; init; } = ColumnAlign.Start;
     public string? WidthCss { get; init; }
+
+    /// <summary>
+    /// The cell's typed value, boxed (number, date, bool, string, ...). Used by exports that keep
+    /// types, such as xlsx; the grid itself always renders <see cref="Format"/>.
+    /// </summary>
+    public Func<T, object?>? RawValue { get; init; }
+
+    /// <summary>Excel number format for this column in xlsx exports (e.g. <c>"$"#,##0.00</c>).</summary>
+    public string? ExcelFormat { get; init; }
+
+    /// <summary>Aggregate functions shown in aggregate rows (numeric columns only).</summary>
+    public GridAggregate Aggregates { get; init; } = GridAggregate.None;
+
+    /// <summary>Numeric value fed to in-memory aggregation; null values are skipped.</summary>
+    public Func<T, decimal?>? AggregateValue { get; init; }
+
+    /// <summary>Formats an aggregate result for display (defaults to the column's own formatter).</summary>
+    public Func<GridAggregate, decimal, string?>? AggregateFormat { get; init; }
+
+    public bool HasAggregates => Aggregates != GridAggregate.None && AggregateValue is not null;
 
     /// <summary>Breakpoint below which this column is hidden (both header and cell). Default: never hidden.</summary>
     public ResponsiveBreakpoint HideBelow { get; init; } = ResponsiveBreakpoint.None;

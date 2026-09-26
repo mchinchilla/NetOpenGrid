@@ -17,12 +17,13 @@ namespace NetOpenGrid.Persistence;
 /// IQueryable&lt;T&gt; (full SQL push-down) using the same column definitions,
 /// operator whitelist and invariant parsing rules as the in-memory pipeline.
 /// </summary>
-public sealed class EFCoreGridDataSource<T> : IGridDataSource<T>, IGridValueCountSource<T>, IGridGroupingSource<T> where T : class
+public sealed class EFCoreGridDataSource<T> : IGridDataSource<T>, IGridValueCountSource<T>, IGridGroupingSource<T>, IGridAggregateSource<T> where T : class
 {
     private readonly GridOptions<T> _options;
     private readonly IServiceProvider? _serviceProvider;
     private readonly Func<IServiceProvider, IQueryable<T>>? _scopedQueryFactory;
     private readonly Func<CancellationToken, ValueTask<IQueryable<T>>>? _queryFactory;
+    private readonly EFGridAggregateProjection<T>? _aggregates;
 
     /// <summary>Scoped-friendly constructor: resolves DbContext per request from a new scope.</summary>
     public EFCoreGridDataSource(GridOptions<T> options, IServiceProvider serviceProvider, Func<IServiceProvider, IQueryable<T>> scopedQueryFactory)
@@ -34,6 +35,7 @@ public sealed class EFCoreGridDataSource<T> : IGridDataSource<T>, IGridValueCoun
         _serviceProvider = serviceProvider;
         _scopedQueryFactory = scopedQueryFactory;
         ValidateColumns(options);
+        _aggregates = EFGridAggregateProjection<T>.TryCreate(options.AggregateColumns);
     }
 
     /// <summary>Direct constructor (tests, pre-built query providers).</summary>
@@ -44,6 +46,7 @@ public sealed class EFCoreGridDataSource<T> : IGridDataSource<T>, IGridValueCoun
         _options = options;
         _queryFactory = queryFactory;
         ValidateColumns(options);
+        _aggregates = EFGridAggregateProjection<T>.TryCreate(options.AggregateColumns);
     }
 
     public async ValueTask<PageResult<T>> LoadAsync(GridQuery query, CancellationToken cancellationToken = default)
@@ -95,6 +98,24 @@ public sealed class EFCoreGridDataSource<T> : IGridDataSource<T>, IGridValueCoun
         var source = ApplyFilters(await _queryFactory!(cancellationToken), query, _options);
         var rows = await ApplySorts(source, query, _options).ToListAsync(cancellationToken);
         return GridGrouper<T>.Group(rows, query, _options);
+    }
+
+    /// <summary>Grand totals: one <c>SELECT SUM/AVG/MIN/MAX</c> over the filtered set.</summary>
+    public async ValueTask<GridAggregates> GetAggregatesAsync(GridQuery query, CancellationToken cancellationToken = default)
+    {
+        if (_aggregates is null)
+        {
+            return GridAggregates.Empty;
+        }
+
+        if (_scopedQueryFactory is not null)
+        {
+            using var scope = _serviceProvider!.CreateScope();
+            return await _aggregates.ExecuteAsync(ApplyFilters(_scopedQueryFactory(scope.ServiceProvider), query, _options), cancellationToken);
+        }
+
+        var source = await _queryFactory!(cancellationToken);
+        return await _aggregates.ExecuteAsync(ApplyFilters(source, query, _options), cancellationToken);
     }
 
     private static async ValueTask<PageResult<T>> ExecuteAsync(
@@ -202,14 +223,14 @@ public sealed class EFCoreGridDataSource<T> : IGridDataSource<T>, IGridValueCoun
     private static void ValidateColumns(GridOptions<T> options)
     {
         var missing = options.Columns
-            .Where(static c => (c.IsSortable || c.IsFilterable || c.IsSearchable) && c.SelectorExpression is null)
+            .Where(static c => (c.IsSortable || c.IsFilterable || c.IsSearchable || c.HasAggregates) && c.SelectorExpression is null)
             .Select(static c => c.Field)
             .ToArray();
 
         if (missing.Length > 0)
         {
             throw new GridConfigurationException(
-                "EFCoreGridDataSource requires expression selectors for sortable/filterable/searchable columns. " +
+                "EFCoreGridDataSource requires expression selectors for sortable/filterable/searchable/aggregated columns. " +
                 $"Use the AddColumn(e => e.Property, ...) expression overload for: {string.Join(", ", missing)}.");
         }
     }

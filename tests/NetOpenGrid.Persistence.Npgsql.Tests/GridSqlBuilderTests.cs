@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using NetOpenGrid.Domain.Columns;
 using NetOpenGrid.Domain.GridQuerying;
 using NpgsqlTypes;
 using NetOpenGrid.Persistence.Npgsql;
@@ -379,5 +380,33 @@ public class GridSqlBuilderTests
     {
         var q = GridQuery.Empty with { Sorts = new[] { new SortDescriptor("nope; DROP TABLE x", SortDirection.Ascending) } };
         Assert.Equal("ORDER BY p.provider_id", GridSqlBuilder.BuildOrderBy(Map(), q));
+    }
+
+    [Fact]
+    public void Aggregate_Select_Wraps_The_Filtered_Projection_And_Casts_To_Numeric()
+    {
+        var (where, ps) = GridSqlBuilder.BuildWhere(Map(), Q(new FilterDescriptor("companyName", FilterOperator.Contains, "acme")), null);
+
+        var (sql, slots) = GridSqlBuilder.BuildAggregateSelect(Map(), where,
+        [
+            ("creditLimit", GridAggregate.Sum | GridAggregate.Max),
+            ("notMapped", GridAggregate.Sum)
+        ]);
+
+        Assert.StartsWith(@"SELECT SUM(src.""CreditLimit"")::numeric, MAX(src.""CreditLimit"")::numeric FROM (SELECT p.code", sql, StringComparison.Ordinal);
+        Assert.EndsWith($"{where}) AS src", sql, StringComparison.Ordinal);
+        Assert.Contains("@p0", sql, StringComparison.Ordinal);
+        Assert.DoesNotContain("acme", sql, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal([("creditLimit", GridAggregate.Sum), ("creditLimit", GridAggregate.Max)], slots);
+        Assert.Single(ps);
+    }
+
+    [Fact]
+    public void Aggregate_Select_Is_Empty_When_No_Mapped_Column_Asks_For_One()
+    {
+        var (sql, slots) = GridSqlBuilder.BuildAggregateSelect(Map(), "WHERE TRUE", [("notMapped", GridAggregate.Sum)]);
+
+        Assert.Equal(string.Empty, sql);
+        Assert.Empty(slots);
     }
 }

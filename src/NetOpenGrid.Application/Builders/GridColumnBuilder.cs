@@ -30,10 +30,14 @@ public sealed class GridColumnBuilder<TSource, TKey>
     private Func<TSource, string?>? _rawCellHtml;
     private bool _visible = true;
     private bool _pinned;
+    private bool _pinnedRight;
     private ColumnAlign _align = ColumnAlign.Start;
     private string? _widthCss;
     private ColumnDataType? _dataType;
     private ResponsiveBreakpoint _hideBelow = ResponsiveBreakpoint.None;
+    private GridAggregate _aggregates = GridAggregate.None;
+    private Func<GridAggregate, decimal, string?>? _aggregateFormat;
+    private string? _excelFormat;
 
     internal GridColumnBuilder(string field, Func<TSource, TKey> selector) : this(field, selector, null)
     {
@@ -165,6 +169,23 @@ public sealed class GridColumnBuilder<TSource, TKey>
     public GridColumnBuilder<TSource, TKey> Pinned(bool pinned = true)
     {
         _pinned = pinned;
+        if (pinned)
+        {
+            _pinnedRight = false;
+        }
+
+        return this;
+    }
+
+    /// <summary>Pins the column to the right edge; right-pinned columns are shown last.</summary>
+    public GridColumnBuilder<TSource, TKey> PinnedRight(bool pinned = true)
+    {
+        _pinnedRight = pinned;
+        if (pinned)
+        {
+            _pinned = false;
+        }
+
         return this;
     }
 
@@ -193,8 +214,41 @@ public sealed class GridColumnBuilder<TSource, TKey>
         return this;
     }
 
+    /// <summary>
+    /// Aggregate functions shown for this column in the grid's aggregate rows
+    /// (see <c>WithAggregateRows</c>). Computed over the whole filtered set, not just the page.
+    /// Numeric columns only.
+    /// </summary>
+    public GridColumnBuilder<TSource, TKey> Aggregate(GridAggregate functions)
+    {
+        _aggregates = functions;
+        return this;
+    }
+
+    /// <summary>Custom display for aggregate results; defaults to the column's <see cref="Format"/>.</summary>
+    public GridColumnBuilder<TSource, TKey> AggregateFormat(Func<GridAggregate, decimal, string?> formatter)
+    {
+        ArgumentNullException.ThrowIfNull(formatter);
+        _aggregateFormat = formatter;
+        return this;
+    }
+
+    /// <summary>Excel number format for xlsx exports, e.g. <c>"\"$\"#,##0.00"</c> or <c>"0.0%"</c>.</summary>
+    public GridColumnBuilder<TSource, TKey> ExcelFormat(string numberFormat)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(numberFormat);
+        _excelFormat = numberFormat;
+        return this;
+    }
+
     internal GridColumn<TSource> Build()
     {
+        if (_aggregates != GridAggregate.None && !AggregateSupport<TSource, TKey>.IsNumeric)
+        {
+            throw new GridConfigurationException(
+                $"Column '{_field}' is {typeof(TKey).Name}; Aggregate() needs a numeric column.");
+        }
+
         var dataType = _dataType ?? InferDataType();
         var sortable = _sortable ?? true;
         var filterable = _filterable ?? true;
@@ -239,11 +293,25 @@ public sealed class GridColumnBuilder<TSource, TKey>
             IsSearchable = searchStrategy is not null,
             IsVisible = _visible,
             IsPinned = _pinned,
+            IsPinnedRight = _pinnedRight,
             DataType = dataType,
             Align = _align,
             WidthCss = _widthCss,
-            HideBelow = _hideBelow
+            HideBelow = _hideBelow,
+            RawValue = BuildRawValue(),
+            ExcelFormat = _excelFormat,
+            Aggregates = _aggregates,
+            AggregateValue = _aggregates == GridAggregate.None ? null : AggregateSupport<TSource, TKey>.ValueSelector(_selector),
+            AggregateFormat = _aggregates == GridAggregate.None
+                ? null
+                : _aggregateFormat ?? AggregateSupport<TSource, TKey>.Formatter(_formatter ?? DefaultValueFormatter<TKey>.Format)
         };
+    }
+
+    private Func<TSource, object?> BuildRawValue()
+    {
+        var selector = _selector;
+        return item => selector(item);
     }
 
     private IComparer<TKey> ResolveComparer() =>
