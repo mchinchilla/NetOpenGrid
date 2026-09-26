@@ -17,21 +17,23 @@ public static class GridCsvExporter
 
     private const string NewLine = "\r\n";
 
-    public static string Build<T>(IReadOnlyList<GridColumn<T>> columns, IReadOnlyList<T> rows)
+    public static string Build<T>(IReadOnlyList<GridColumn<T>> columns, IReadOnlyList<T> rows, Func<string, string>? headerLocalizer = null)
     {
         var sb = new StringBuilder(4096);
         using var writer = new StringWriter(sb, CultureInfo.InvariantCulture);
 
-        WriteHeader(writer, columns);
+        WriteHeader(writer, columns, headerLocalizer);
         WriteRows(writer, columns, rows);
 
         return sb.ToString();
     }
 
-    public static void WriteHeader<T>(TextWriter writer, IReadOnlyList<GridColumn<T>> columns)
+    /// <summary>Header row from the column labels; <paramref name="headerLocalizer"/> translates them at write time (null keeps them as written).</summary>
+    public static void WriteHeader<T>(TextWriter writer, IReadOnlyList<GridColumn<T>> columns, Func<string, string>? headerLocalizer = null)
     {
         // Label, no Header: el encabezado puede ir en blanco y un CSV sin nombre de campo no se puede leer.
-        WriteLine(writer, columns.Select(static c => c.Label));
+        var localize = headerLocalizer ?? (static h => h);
+        WriteLine(writer, columns.Select(c => localize(c.Label)));
     }
 
     public static void WriteRows<T>(TextWriter writer, IReadOnlyList<GridColumn<T>> columns, IEnumerable<T> rows)

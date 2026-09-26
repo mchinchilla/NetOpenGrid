@@ -664,6 +664,10 @@ builder.Services.AddNetOpenGrid(
   contadores y rangos con las mismas cadenas (fallbacks EN embebidos en el JS).
 - ~39 claves: `search.*`, `pager.*`, `records.*`, `range.*`, `filter.*`, `select.*`, `chips.*`, `ops.*`, `pin.aria`, `theme.aria`, `export.aria`.
 - El mensaje de vacío sigue siendo `WithEmptyMessage(...)` (por grid).
+- Varios idiomas en el mismo host: `loc.FollowCurrentUICulture = true` elige el preset por
+  `CultureInfo.CurrentUICulture` en cada render (la cultura que fija `UseRequestLocalization`), y
+  `loc.TextLocalizer = t => localizer[t]` traduce lo que escribiste tú: cabeceras, título,
+  subtítulo y la cabecera del CSV. El `lang` del documento sigue la misma cultura.
 
 ---
 

@@ -22,6 +22,7 @@ public sealed class GridRuntime<TItem> : IGridRuntime
     private readonly GridOptions<TItem> _options;
     private readonly IGridDataSource<TItem> _dataSource;
     private readonly Rendering.GridHtmlRenderer<TItem> _renderer;
+    private readonly NetOpenGridLocalizationOptions _locale;
 
     public GridRuntime(
         GridOptions<TItem> options,
@@ -35,6 +36,7 @@ public sealed class GridRuntime<TItem> : IGridRuntime
         ArgumentNullException.ThrowIfNull(localizationOptions);
         _options = options;
         _dataSource = dataSource;
+        _locale = localizationOptions;
         _renderer = new Rendering.GridHtmlRenderer<TItem>(options, assetOptions, localizationOptions);
     }
 
@@ -243,7 +245,7 @@ public sealed class GridRuntime<TItem> : IGridRuntime
                 Export.GridXlsxWriter.ContentType,
                 first.Page.TotalCount,
                 maxRows,
-                (output, token) => Export.GridXlsxWriter.WriteAsync(output, _options.Title, columns, Pages(token), token));
+                (output, token) => Export.GridXlsxWriter.WriteAsync(output, _locale.Text(_options.Title), columns, Pages(token), token, _locale.Text));
         }
 
         async Task WriteCsvAsync(Stream output, CancellationToken token)
@@ -251,7 +253,7 @@ public sealed class GridRuntime<TItem> : IGridRuntime
             await using var writer = new StreamWriter(output, Export.GridCsvExporter.Encoding, bufferSize: 16 * 1024, leaveOpen: true);
             var buffer = new StringWriter(CultureInfo.InvariantCulture);
 
-            Export.GridCsvExporter.WriteHeader(buffer, columns);
+            Export.GridCsvExporter.WriteHeader(buffer, columns, _locale.Text);
             await foreach (var items in Pages(token))
             {
                 Export.GridCsvExporter.WriteRows(buffer, columns, items);

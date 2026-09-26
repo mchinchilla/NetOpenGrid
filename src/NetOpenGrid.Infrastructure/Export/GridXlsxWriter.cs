@@ -38,9 +38,11 @@ public static class GridXlsxWriter
         string sheetName,
         IReadOnlyList<GridColumn<T>> columns,
         IAsyncEnumerable<IReadOnlyList<T>> pages,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        Func<string, string>? headerLocalizer = null)
     {
         ArgumentNullException.ThrowIfNull(output);
+        var localize = headerLocalizer ?? (static h => h);
         ArgumentNullException.ThrowIfNull(columns);
         ArgumentNullException.ThrowIfNull(pages);
 
@@ -73,7 +75,7 @@ public static class GridXlsxWriter
                     if (!headerWritten)
                     {
                         AppendSheetStart(sb, columns, page);
-                        AppendHeaderRow(sb, columns, letters);
+                        AppendHeaderRow(sb, columns, letters, localize);
                         headerWritten = true;
                     }
 
@@ -90,7 +92,7 @@ public static class GridXlsxWriter
                 if (!headerWritten)
                 {
                     AppendSheetStart(sb, columns, []);
-                    AppendHeaderRow(sb, columns, letters);
+                    AppendHeaderRow(sb, columns, letters, localize);
                 }
 
                 sb.Append("</sheetData>");
@@ -142,12 +144,12 @@ public static class GridXlsxWriter
         return longest + 3;
     }
 
-    private static void AppendHeaderRow<T>(StringBuilder sb, IReadOnlyList<GridColumn<T>> columns, string[] letters)
+    private static void AppendHeaderRow<T>(StringBuilder sb, IReadOnlyList<GridColumn<T>> columns, string[] letters, Func<string, string> localize)
     {
         sb.Append("<row r=\"1\">");
         for (var i = 0; i < columns.Count; i++)
         {
-            AppendInlineString(sb, letters[i] + "1", columns[i].Label, StyleHeader);
+            AppendInlineString(sb, letters[i] + "1", localize(columns[i].Label), StyleHeader);
         }
 
         sb.Append("</row>");

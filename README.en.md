@@ -665,6 +665,10 @@ builder.Services.AddNetOpenGrid(
   counters and ranges with the exact same strings (EN fallbacks embedded in the JS).
 - ~39 keys: `search.*`, `pager.*`, `records.*`, `range.*`, `filter.*`, `select.*`, `chips.*`, `ops.*`, `pin.aria`, `theme.aria`, `export.aria`.
 - The empty message remains `WithEmptyMessage(...)` (per grid).
+- Several languages on one host: `loc.FollowCurrentUICulture = true` picks the preset from
+  `CultureInfo.CurrentUICulture` on every render (the culture `UseRequestLocalization` sets), and
+  `loc.TextLocalizer = t => localizer[t]` translates what you wrote yourself: column headers, title,
+  subtitle and the CSV header row. The document's `lang` follows the same culture.
 
 ---
 

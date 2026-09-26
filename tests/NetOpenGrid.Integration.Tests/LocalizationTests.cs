@@ -6,7 +6,9 @@ using NetOpenGrid.Domain.GridQuerying;
 using NetOpenGrid.Domain.Results;
 using NetOpenGrid.Infrastructure;
 using NetOpenGrid.Infrastructure.Runtime;
+using NetOpenGrid.Infrastructure.Export;
 using NetOpenGrid.Infrastructure.Rendering;
+using System.Globalization;
 using Xunit;
 
 namespace NetOpenGrid.Integration.Tests;
@@ -86,5 +88,67 @@ public class LocalizationTests
         var locale = services.BuildServiceProvider().GetRequiredService<NetOpenGridLocalizationOptions>();
 
         Assert.Equal("Anterior", locale["pager.prev"]);
+    }
+
+    [Fact]
+    public async Task FollowingTheRequestCulture_PicksThePresetPerRender()
+    {
+        var locale = new NetOpenGridLocalizationOptions { FollowCurrentUICulture = true }
+            .Set("filter.apply", "Go");
+        var renderer = Renderer(locale);
+        var original = CultureInfo.CurrentUICulture;
+        try
+        {
+            CultureInfo.CurrentUICulture = CultureInfo.GetCultureInfo("es-HN");
+            var spanish = await renderer.RenderShellAsync(EmptyResult());
+            CultureInfo.CurrentUICulture = CultureInfo.GetCultureInfo("en-US");
+            var english = await renderer.RenderShellAsync(EmptyResult());
+            CultureInfo.CurrentUICulture = CultureInfo.GetCultureInfo("fr-FR");
+            var unknown = await renderer.RenderShellAsync(EmptyResult());
+
+            Assert.Contains("<html lang=\"es\">", spanish);
+            Assert.Contains("Anterior", spanish);
+            Assert.Contains("\"ops.contains\":\"contiene\"", spanish);
+            Assert.Contains(">Go</button>", spanish);
+
+            Assert.Contains("<html lang=\"en\">", english);
+            Assert.Contains(">Prev</button>", english);
+            Assert.Contains(">Go</button>", english);
+
+            // Sin preset para el idioma, se queda con lo configurado (inglés + overrides).
+            Assert.Contains("<html lang=\"en\">", unknown);
+            Assert.Contains(">Prev</button>", unknown);
+        }
+        finally
+        {
+            CultureInfo.CurrentUICulture = original;
+        }
+    }
+
+    [Fact]
+    public async Task TextLocalizer_TranslatesHeadersTitleAndCsvHeader()
+    {
+        var options = new GridOptionsBuilder<LocaleRow>()
+            .WithId("loc")
+            .WithTitle("People")
+            .AddColumn("name", r => r.Name, c => c.Header("Name"))
+            .AddColumn("city", r => r.City, c => c.Header("City"))
+            .Build();
+        var locale = new NetOpenGridLocalizationOptions
+        {
+            TextLocalizer = text => text switch { "People" => "Personas", "Name" => "Nombre", "City" => "Ciudad", _ => text },
+        };
+        var renderer = new GridHtmlRenderer<LocaleRow>(options, new NetOpenGridAssetOptions(), locale);
+
+        var html = await renderer.RenderShellAsync(EmptyResult());
+
+        Assert.Contains("<title>Personas</title>", html);
+        Assert.Contains(">Nombre<", html);
+        Assert.Contains(">Ciudad<", html);
+        Assert.Contains("\"header\":\"Nombre\"", html);
+        Assert.DoesNotContain(">Name<", html);
+
+        var csv = GridCsvExporter.Build(options.Columns, [new LocaleRow("Ana", "SPS")], locale.Text);
+        Assert.StartsWith("Nombre,Ciudad\r\n", csv);
     }
 }

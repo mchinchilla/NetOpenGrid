@@ -75,7 +75,9 @@ public sealed class GridHtmlRenderer<TItem>
             .CreateStringBuilderPool(initialCapacity: 4096, maximumRetainedCapacity: 256 * 1024);
     }
 
-    private string L(string key) => _locale[key];
+    private string L(string key) => _locale.Get(key);
+
+    private string T(string? text) => _locale.Text(text);
 
     public ValueTask<string> RenderRowsAsync(
         GridExecutionResult<TItem> result,
@@ -528,10 +530,12 @@ public sealed class GridHtmlRenderer<TItem>
     {
         var prefix = _assetOptions.NormalizedAssetPrefix;
 
-        w.Write("<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">");
+        w.Write("<!doctype html><html lang=\"");
+        AppendEncoded(w, _locale.LanguageTag);
+        w.Write("\"><head><meta charset=\"utf-8\">");
         w.Write("<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">");
         w.Write("<title>");
-        AppendEncoded(w, _options.Title);
+        AppendEncoded(w, T(_options.Title));
         w.Write("</title>");
         w.Write(ThemeBootScript);
         w.Write("<link rel=\"stylesheet\" href=\"");
@@ -633,13 +637,13 @@ public sealed class GridHtmlRenderer<TItem>
 
         w.Write("<div class=\"flex flex-wrap items-center gap-3\">");
         w.Write("<h1 class=\"text-lg font-semibold tracking-tight\">");
-        AppendEncoded(w, _options.Title);
+        AppendEncoded(w, T(_options.Title));
         w.Write("</h1>");
 
         if (_options.Subtitle.Length > 0)
         {
             w.Write("<p class=\"text-sm text-neutral-500 dark:text-neutral-400\">");
-            AppendEncoded(w, _options.Subtitle);
+            AppendEncoded(w, T(_options.Subtitle));
             w.Write("</p>");
         }
 
@@ -670,7 +674,7 @@ public sealed class GridHtmlRenderer<TItem>
             w.Write("<option value=\"");
             AppendEncoded(w, column.Field);
             w.Write("\">");
-            AppendEncoded(w, column.Label);
+            AppendEncoded(w, T(column.Label));
             w.Write("</option>");
         }
 
@@ -862,7 +866,7 @@ public sealed class GridHtmlRenderer<TItem>
             w.Write(")\" @change=\"toggleColumn(");
             AppendJsQuoted(w, column.Field);
             w.Write(")\"><span>");
-            AppendEncoded(w, column.Label);
+            AppendEncoded(w, T(column.Label));
             w.Write("</span></label>");
         }
 
@@ -1061,7 +1065,7 @@ public sealed class GridHtmlRenderer<TItem>
                 w.Write("<button type=\"button\" class=\"inline-flex cursor-pointer items-center gap-1 transition hover:text-brand-600 dark:hover:text-brand-400\" @click=\"sortBy(");
                 AppendJsQuoted(w, column.Field);
                 w.Write(", $event)\">");
-                AppendEncoded(w, column.Header);
+                AppendEncoded(w, T(column.Header));
                 w.Write("<span aria-hidden=\"true\" class=\"text-[10px] leading-none opacity-70\" x-show=\"sortDir(");
                 AppendJsQuoted(w, column.Field);
                 w.Write(") !== ''\" x-text=\"sortDir(");
@@ -1071,7 +1075,7 @@ public sealed class GridHtmlRenderer<TItem>
             else
             {
                 w.Write("<span>");
-                AppendEncoded(w, column.Header);
+                AppendEncoded(w, T(column.Header));
                 w.Write("</span>");
             }
 
@@ -1082,7 +1086,7 @@ public sealed class GridHtmlRenderer<TItem>
                 w.Write(") ? 'text-brand-600 dark:text-brand-400' : 'text-neutral-400'\" @click=\"openFilter(");
                 AppendJsQuoted(w, column.Field);
                 w.Write(", $event)\" aria-label=\"");
-                w.Write(L("filter.aria").Replace("{field}", column.Label));
+                w.Write(L("filter.aria").Replace("{field}", T(column.Label)));
                 w.Write("\">");
                 w.Write(FunnelIcon);
                 w.Write("</button>");
@@ -1097,7 +1101,7 @@ public sealed class GridHtmlRenderer<TItem>
             w.Write(")\" :aria-label=\"pinLabel(");
             AppendJsQuoted(w, column.Field);
             w.Write(")\" aria-label=\"");
-            w.Write(L("pin.left.aria").Replace("{field}", column.Label));
+            w.Write(L("pin.left.aria").Replace("{field}", T(column.Label)));
             w.Write("\">");
             w.Write(PinIcon);
             w.Write("</button>");
@@ -1563,7 +1567,7 @@ public sealed class GridHtmlRenderer<TItem>
             w.Write("{\"field\":");
             AppendJsonString(w, _visibleColumns[i].Field);
             w.Write(",\"header\":");
-            AppendJsonString(w, _visibleColumns[i].Label);
+            AppendJsonString(w, T(_visibleColumns[i].Label));
             w.Write(",\"flipX\":\"");
             w.Write(IsFirstFilterable(_visibleColumns[i]) ? "left" : "right");
             w.Write("\",\"mode\":\"");
@@ -1575,7 +1579,7 @@ public sealed class GridHtmlRenderer<TItem>
 
         w.Write("];");
         w.Write("__NETGRID__.locale=");
-        w.Write(JsonSerializer.Serialize(_locale.Strings, JsonOptions));
+        w.Write(JsonSerializer.Serialize(_locale.CurrentStrings, JsonOptions));
         w.Write(';');
 
         // Published so the client (netopengrid.js) builds its fetch/navigation URLs from the

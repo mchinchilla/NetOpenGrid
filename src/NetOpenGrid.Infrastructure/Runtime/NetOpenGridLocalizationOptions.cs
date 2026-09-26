@@ -1,3 +1,5 @@
+using System.Globalization;
+
 namespace NetOpenGrid.Infrastructure.Runtime;
 
 /// <summary>
@@ -5,6 +7,13 @@ namespace NetOpenGrid.Infrastructure.Runtime;
 /// (<c>UseCulture("es")</c>); every key can be overridden for custom locales.
 /// The effective dictionary is injected into the shell as
 /// <c>__NETGRID__.locale</c> so the JS runtime uses the exact same strings.
+/// <para>
+/// Two hooks let a host that serves several languages localize per request instead of once
+/// at startup: <see cref="FollowCurrentUICulture"/> picks the preset that matches
+/// <see cref="CultureInfo.CurrentUICulture"/> on every render (the culture the request
+/// localization middleware sets), and <see cref="TextLocalizer"/> translates the strings the
+/// host wrote itself — column headers, title and subtitle — through its own resources.
+/// </para>
 /// </summary>
 public sealed class NetOpenGridLocalizationOptions
 {
@@ -20,11 +29,74 @@ public sealed class NetOpenGridLocalizationOptions
 
     public IReadOnlyDictionary<string, string> Strings => _strings;
 
+    /// <summary>
+    /// When true, every render uses the preset of <see cref="CultureInfo.CurrentUICulture"/>
+    /// (its two-letter language; unknown languages fall back to the strings configured here),
+    /// with the overrides applied through <see cref="Set"/> on top. The page's
+    /// <c>lang</c> attribute follows the same culture.
+    /// </summary>
+    public bool FollowCurrentUICulture { get; set; }
+
+    /// <summary>
+    /// Translates host-authored text (column headers and labels, grid title and subtitle,
+    /// CSV header row) at render time. Null keeps the text as written.
+    /// </summary>
+    public Func<string, string>? TextLocalizer { get; set; }
+
+    private readonly Dictionary<string, string> _overrides = new(StringComparer.Ordinal);
+
+    /// <summary>The strings for this render: the request culture's preset when following it, else the configured ones.</summary>
+    public IReadOnlyDictionary<string, string> CurrentStrings
+    {
+        get
+        {
+            if (!FollowCurrentUICulture)
+            {
+                return _strings;
+            }
+
+            var language = CultureInfo.CurrentUICulture.TwoLetterISOLanguageName;
+            if (!Presets.TryGetValue(language, out var preset))
+            {
+                return _strings;
+            }
+
+            if (_overrides.Count == 0)
+            {
+                return preset;
+            }
+
+            var merged = new Dictionary<string, string>(preset, StringComparer.Ordinal);
+            foreach (var (key, value) in _overrides)
+            {
+                merged[key] = value;
+            }
+
+            return merged;
+        }
+    }
+
+    /// <summary>A UI string for this render (see <see cref="CurrentStrings"/>).</summary>
+    public string Get(string key) => CurrentStrings.GetValueOrDefault(key, key);
+
+    /// <summary>Host-authored text through <see cref="TextLocalizer"/>, or as written.</summary>
+    public string Text(string? text) =>
+        string.IsNullOrEmpty(text) || TextLocalizer is null ? text ?? string.Empty : TextLocalizer(text);
+
+    /// <summary>Language tag for the document: the request culture when following it, else the configured preset's.</summary>
+    public string LanguageTag =>
+        FollowCurrentUICulture && Presets.ContainsKey(CultureInfo.CurrentUICulture.TwoLetterISOLanguageName)
+            ? CultureInfo.CurrentUICulture.TwoLetterISOLanguageName
+            : _configuredCulture;
+
+    private string _configuredCulture = DefaultCulture;
+
     /// <summary>Overrides a single key.</summary>
     public NetOpenGridLocalizationOptions Set(string key, string value)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(key);
         _strings[key] = value;
+        _overrides[key] = value;
         return this;
     }
 
@@ -33,6 +105,7 @@ public sealed class NetOpenGridLocalizationOptions
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(culture);
         var preset = Presets.GetValueOrDefault(culture, Presets[DefaultCulture]);
+        _configuredCulture = Presets.ContainsKey(culture) ? culture.ToLowerInvariant() : DefaultCulture;
 
         foreach (var (key, value) in preset)
         {
