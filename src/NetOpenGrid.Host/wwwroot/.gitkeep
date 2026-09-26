@@ -1,0 +1,1 @@
+# El SDK web declara wwwroot como raíz de contenido estático aunque esté vacío; sin la carpeta, el Host no arranca en Development.
