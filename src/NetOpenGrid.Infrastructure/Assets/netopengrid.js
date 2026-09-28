@@ -68,6 +68,29 @@
     }
   };
 
+  // Every query-string parameter the grid owns. Anything else in the address bar belongs to
+  // the host page — a filter form it renders above the grid, an ?embed=1 flag, a deep link of
+  // its own — and is carried through by withHostParams below.
+  const GRID_PARAMS = new Set(['page', 'pageSize', 'sort', 'filter', 'q', 'groupby', 'expand']);
+
+  // Re-attaches the host page's own parameters to a grid query.
+  //
+  // toParams() builds the query from grid state alone, which silently drops whatever the host
+  // put in the URL: a filter bar above the grid loses its values the moment the user pages or
+  // sorts, and an embedded grid loses ?embed=1, so reloading that iframe brings the standalone
+  // chrome back inside the host's page.
+  //
+  // Deliberately NOT applied inside toParams. That function also builds the /rows and /values
+  // fetches, the export URL and the query stored in a saved view, so merging there would send
+  // the host's parameters to the server on every request and bake whatever happened to be in
+  // the URL into persisted state. Only the address bar carries them.
+  function withHostParams(params) {
+    for (const [key, value] of new URLSearchParams(window.location.search)) {
+      if (!GRID_PARAMS.has(key)) params.append(key, value);
+    }
+    return params;
+  }
+
   function toParams(state, excludeField) {
     const params = new URLSearchParams();
     if (state.page > 1) params.set('page', String(state.page));
@@ -129,7 +152,9 @@
       state.pageSize = state.virtualCfg.blockSize;
     }
 
-    const params = toParams(state);
+    // The address bar is the only place the host page's own parameters are carried through —
+    // see withHostParams for why this does not belong inside toParams.
+    const params = withHostParams(toParams(state));
     const query = params.toString();
     window.history.replaceState(null, '', `${window.location.pathname}${query ? '?' + query : ''}`);
 
