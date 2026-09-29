@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.RegularExpressions;
 using NetOpenGrid.Infrastructure.Assets;
 using Xunit;
 
@@ -65,27 +66,42 @@ public class HostParamPreservationTests
     }
 
     /// <summary>
-    /// Every parameter <c>GridRequestParser</c> reads must be excluded from the merge, or the
-    /// grid's own state would be appended a second time on each interaction and the query string
-    /// would grow without bound.
+    /// GRID_PARAMS must cover EVERY key <c>toParams</c> can emit, so the keys are read back out of
+    /// <c>toParams</c> rather than restated here — a hand-kept list is exactly what drifts.
+    ///
+    /// <para>It drifted once already: the set was first written from
+    /// <c>GridRequestParser</c>'s server-side constants, which omit <c>cols</c> and <c>hide</c>
+    /// because a different server path reads those. The client emitted them anyway, so both were
+    /// treated as the host page's, re-appended on every address-bar write, and the query string
+    /// grew a second contradictory <c>cols</c> per interaction until the row fetch failed.</para>
     /// </summary>
-    [Theory]
-    [InlineData("'page'")]
-    [InlineData("'pageSize'")]
-    [InlineData("'sort'")]
-    [InlineData("'filter'")]
-    [InlineData("'q'")]
-    [InlineData("'groupby'")]
-    [InlineData("'expand'")]
-    public void Grid_Owned_Parameters_Are_Excluded_From_The_Merge(string parameter)
+    [Fact]
+    public void Grid_Params_Covers_Every_Key_ToParams_Emits()
     {
         var js = ClientRuntime;
+
         var start = js.IndexOf("const GRID_PARAMS = new Set(", StringComparison.Ordinal);
         Assert.True(start >= 0, "GRID_PARAMS is missing from the client runtime.");
+        var declared = js[start..js.IndexOf("]);", start, StringComparison.Ordinal)];
 
-        var end = js.IndexOf(");", start, StringComparison.Ordinal);
-        var declaration = js[start..end];
+        var bodyStart = js.IndexOf("function toParams(", StringComparison.Ordinal);
+        Assert.True(bodyStart >= 0, "toParams is missing from the client runtime.");
+        var body = js[bodyStart..js.IndexOf("\n  }", bodyStart, StringComparison.Ordinal)];
 
-        Assert.Contains(parameter, declaration, StringComparison.Ordinal);
+        var emitted = Regex
+            .Matches(body, @"params\.(?:set|append)\(\s*'(?<key>[A-Za-z]+)'")
+            .Select(m => m.Groups["key"].Value)
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+
+        Assert.NotEmpty(emitted);
+
+        foreach (var key in emitted)
+        {
+            Assert.True(
+                declared.Contains($"'{key}'", StringComparison.Ordinal),
+                $"toParams emits '{key}' but GRID_PARAMS does not list it, so it would be treated "
+                + "as a host parameter and re-appended on every address-bar write.");
+        }
     }
 }

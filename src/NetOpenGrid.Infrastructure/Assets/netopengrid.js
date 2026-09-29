@@ -71,7 +71,13 @@
   // Every query-string parameter the grid owns. Anything else in the address bar belongs to
   // the host page — a filter form it renders above the grid, an ?embed=1 flag, a deep link of
   // its own — and is carried through by withHostParams below.
-  const GRID_PARAMS = new Set(['page', 'pageSize', 'sort', 'filter', 'q', 'groupby', 'expand']);
+  // MUST list every key toParams can emit. A missing one is treated as the host's and gets
+  // re-appended on each address-bar write, so the query string grows without bound and the
+  // server receives two contradictory values. HostParamPreservationTests reads the keys back
+  // out of toParams and fails if this set does not cover them.
+  const GRID_PARAMS = new Set([
+    'page', 'pageSize', 'sort', 'filter', 'q', 'groupby', 'expand', 'cols', 'hide',
+  ]);
 
   // Re-attaches the host page's own parameters to a grid query.
   //
