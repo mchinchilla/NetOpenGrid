@@ -15,6 +15,20 @@ public sealed record GridGroup<T>(
     IReadOnlyList<GridGroup<T>> Children,
     IReadOnlyList<T> Rows)
 {
+    private readonly string? _label;
+
+    /// <summary>
+    /// What the group header shows: the group column's display format applied to the group's value
+    /// (an enum as its translated name, a date or an amount as the cells show them). <see cref="Value"/>
+    /// stays the raw, parseable key that <see cref="Path"/> carries for expand/collapse. Falls back to
+    /// <see cref="Value"/> when no label was set.
+    /// </summary>
+    public string Label
+    {
+        get => _label ?? Value;
+        init => _label = value;
+    }
+
     /// <summary>Subtotals over every row of the group (all of them, expanded or not).</summary>
     public GridAggregates Aggregates { get; init; } = GridAggregates.Empty;
 }

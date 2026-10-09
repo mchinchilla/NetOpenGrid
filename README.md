@@ -686,6 +686,9 @@ GET /netgrid/:id/rows?groupby=department,city&expand=department=Design|city=Lima
   `.WithGroupPanel(false)` lo quita y deja chips simples.
 - El selector "Agrupar por..." del toolbar sigue siendo el camino con teclado.
 - Headers de grupo con chevron, conteo de filas y indentación por nivel; valores vacíos → bucket "(Vacíos)".
+- El header de un grupo se lee como las celdas que agrupa: muestra el `.Format(...)` de la columna (un enum
+  con su nombre para mostrar, un monto o una fecha formateados) y el valor crudo sigue viajando en `expand=`.
+  Sin formato, o si el formato no devuelve nada, se muestra el valor crudo.
 - El orden de los grupos respeta el sort de la columna agrupada; los sorts restantes ordenan dentro de cada grupo.
 - Motores: in-memory y JSON agrupan en memoria; **EF Core** hace push-down de filtro+orden a SQL y construye el árbol sobre las filas coincidentes.
 

@@ -128,6 +128,7 @@ public static class GridGrouper<T>
                 children,
                 leafRows)
             {
+                Label = DisplayLabel(columns[level], bucket[0], currentKey),
                 Aggregates = aggregateColumns.Count > 0 ? GridAggregator.Compute(bucket, aggregateColumns) : GridAggregates.Empty
             });
         }
@@ -148,6 +149,17 @@ public static class GridGrouper<T>
 
         Flush();
         return groups ?? [];
+    }
+
+    /// <summary>
+    /// The header text of a group: the column's cell format of any row in the bucket (they all share
+    /// the key), so a group reads like the cells it holds. The raw key stays in the path; a format that
+    /// yields nothing falls back to it.
+    /// </summary>
+    private static string DisplayLabel(GridColumn<T> column, T sample, string key)
+    {
+        var formatted = column.Format(sample);
+        return string.IsNullOrWhiteSpace(formatted) ? key : formatted;
     }
 
     private sealed class RawKeySortStrategy(GridColumn<T> column) : ISortStrategy<T>

@@ -687,6 +687,9 @@ GET /netgrid/:id/rows?groupby=department,city&expand=department=Design|city=Lima
   leaves plain chips.
 - The toolbar's "Group by..." picker stays as the keyboard path.
 - Group headers with chevron, row counts and per-level indentation; null values → a "(Blanks)" bucket.
+- A group header reads like the cells it groups: it shows the column's `.Format(...)` of the value (an enum
+  as its display name, an amount or a date formatted), while the raw value keeps travelling in `expand=`.
+  Without a format, or when the format yields nothing, the raw value is shown.
 - Group order follows the grouped column's sort; remaining sorts order rows inside each group.
 - Engines: in-memory and JSON group in memory; **EF Core** pushes filter+sort down to SQL and builds the tree over the matching rows.
 

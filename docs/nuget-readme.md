@@ -178,7 +178,8 @@ Missing properties behave like `null` (sort lowest, match `is-empty`).
 - Excel-style filters: distinct-value checklist with counts that ignore the column's own filter.
 - Global search with debounce, OR across `Searchable` columns.
 - Stable multi-sort (shift-click) with deterministic ties and nulls first.
-- Nested grouping up to 3 levels (`groupby=` + `expand=` in the URL). Groups are paged, not rows.
+- Nested grouping up to 3 levels (`groupby=` + `expand=` in the URL). Groups are paged, not rows. Group
+  headers show the column's `.Format(...)` of the value; the raw value stays in the URL.
 - Server-side paging with meta headers: `X-Grid-Total`, `X-Grid-Page`, `X-Grid-Page-Size`, `X-Grid-Page-Count`.
 - Row selection with a floating action bar. CSV export (RFC 4180) of the selection or of the full
   filtered dataset, honouring the column formatters and the current column order.

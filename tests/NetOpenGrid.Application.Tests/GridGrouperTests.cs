@@ -1,3 +1,4 @@
+using System.Globalization;
 using NetOpenGrid.Application.Builders;
 using NetOpenGrid.Application.Engine;
 using NetOpenGrid.Application.Options;
@@ -136,5 +137,39 @@ public class GridGrouperTests
 
         Assert.Equal(0, result.TotalGroups);
         Assert.Empty(result.Groups);
+    }
+
+    [Fact]
+    public void Label_UsesTheColumnFormat_WhilePathAndValueKeepTheRawKey()
+    {
+        var options = new GridOptionsBuilder<Person>()
+            .WithId("formatted")
+            .AddColumn("city", p => p.City, c => c.Format(v => v is null ? null : "City of " + v))
+            .AddColumn("salary", p => p.Salary, c => c.Format(v => v.ToString("C0", CultureInfo.GetCultureInfo("en-US"))))
+            .Build();
+
+        var byCity = GridGrouper<Person>.Group(TestGrid.People, GroupQuery(["city"], ["city=Lima"]), options);
+        var lima = byCity.Groups.Single(g => g.Value == "Lima");
+        Assert.Equal("City of Lima", lima.Label);
+        Assert.Equal("city=Lima", lima.Path);   // the round-trip key stays raw
+        Assert.Equal(2, lima.Rows.Count);        // and still expands
+
+        var bySalary = GridGrouper<Person>.Group(TestGrid.People, GroupQuery(["salary"]), options);
+        var top = bySalary.Groups.Single(g => g.Value == "90000");
+        Assert.Equal("$90,000", top.Label);
+    }
+
+    [Fact]
+    public void Label_FallsBackToTheRawKey_WithoutAFormatOrWhenItYieldsNothing()
+    {
+        var plain = GridGrouper<Person>.Group(TestGrid.People, GroupQuery(["city"]), Options());
+        Assert.All(plain.Groups, g => Assert.Equal(g.Value, g.Label));
+
+        var options = new GridOptionsBuilder<Person>()
+            .WithId("blank-format")
+            .AddColumn("city", p => p.City, c => c.Format(v => v is null ? null : "City of " + v))
+            .Build();
+        var blank = GridGrouper<Person>.Group(TestGrid.People, GroupQuery(["city"]), options).Groups.Single(g => g.Value.Length == 0);
+        Assert.Equal(string.Empty, blank.Label); // the renderer shows its "blank" text
     }
 }

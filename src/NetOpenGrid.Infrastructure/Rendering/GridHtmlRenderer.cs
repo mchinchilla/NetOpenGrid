@@ -206,7 +206,7 @@ public sealed class GridHtmlRenderer<TItem>
         }
     }
 
-    private string GroupLabel(GridGroup<TItem> group) => group.Value.Length == 0 ? L("group.blank") : group.Value;
+    private string GroupLabel(GridGroup<TItem> group) => group.Label.Length == 0 ? L("group.blank") : group.Label;
 
     private static int GroupIndent(int level) => 8 + level * 20;
 
