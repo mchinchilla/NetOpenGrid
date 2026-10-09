@@ -172,4 +172,20 @@ public class GridGrouperTests
         var blank = GridGrouper<Person>.Group(TestGrid.People, GroupQuery(["city"]), options).Groups.Single(g => g.Value.Length == 0);
         Assert.Equal(string.Empty, blank.Label); // the renderer shows its "blank" text
     }
+
+    [Fact]
+    public void ExpandedLeaf_RowsAreCappedAtMaxGroupRows_AndTheCountKeepsTheTotal()
+    {
+        var options = new GridOptionsBuilder<Person>()
+            .WithId("capped")
+            .WithMaxGroupRows(1)
+            .AddColumn("city", p => p.City)
+            .Build();
+
+        var lima = GridGrouper<Person>.Group(TestGrid.People, GroupQuery(["city"], ["city=Lima"]), options)
+            .Groups.Single(g => g.Value == "Lima");
+
+        Assert.Equal(2, lima.Count);
+        Assert.Single(lima.Rows);
+    }
 }

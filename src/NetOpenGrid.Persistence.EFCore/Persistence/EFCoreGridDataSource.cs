@@ -82,21 +82,30 @@ public sealed class EFCoreGridDataSource<T> : IGridDataSource<T>, IGridValueCoun
     }
 
     /// <summary>
-    /// Grouped load: filter + sort are pushed down to SQL; the grouping tree is
-    /// built in memory over the matching rows (documented v1 trade-off).
+    /// Grouped load, pushed down to SQL (<see cref="EFGridGrouping{T}"/>): one <c>GROUP BY</c> per level
+    /// for the headers, paged in the database, and rows only for the groups the URL expands. Group
+    /// columns without an expression selector fall back to grouping the filtered rows in memory.
     /// </summary>
     public async ValueTask<GroupedPageResult<T>> LoadGroupedAsync(GridQuery query, CancellationToken cancellationToken = default)
     {
         if (_scopedQueryFactory is not null)
         {
             using var scope = _serviceProvider!.CreateScope();
-            var scopedSource = ApplyFilters(_scopedQueryFactory(scope.ServiceProvider), query, _options);
-            var scopedRows = await ApplySorts(scopedSource, query, _options).ToListAsync(cancellationToken);
-            return GridGrouper<T>.Group(scopedRows, query, _options);
+            return await GroupAsync(_scopedQueryFactory(scope.ServiceProvider), query, cancellationToken);
         }
 
-        var source = ApplyFilters(await _queryFactory!(cancellationToken), query, _options);
-        var rows = await ApplySorts(source, query, _options).ToListAsync(cancellationToken);
+        return await GroupAsync(await _queryFactory!(cancellationToken), query, cancellationToken);
+    }
+
+    private async ValueTask<GroupedPageResult<T>> GroupAsync(IQueryable<T> source, GridQuery query, CancellationToken cancellationToken)
+    {
+        var filtered = ApplyFilters(source, query, _options);
+        if (EFGridGrouping<T>.CanPushDown(query, _options))
+        {
+            return await EFGridGrouping<T>.LoadAsync(filtered, query, _options, rows => ApplySorts(rows, query, _options), _aggregates, cancellationToken);
+        }
+
+        var rows = await ApplySorts(filtered, query, _options).ToListAsync(cancellationToken);
         return GridGrouper<T>.Group(rows, query, _options);
     }
 

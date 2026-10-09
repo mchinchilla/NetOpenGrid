@@ -34,7 +34,7 @@ public static class GridGrouper<T>
             ? options.AggregateColumns
             : [];
 
-        var topLevel = BuildLevel(ordered, 0, string.Empty, groupColumns, expanded, aggregateColumns);
+        var topLevel = BuildLevel(ordered, 0, string.Empty, groupColumns, expanded, aggregateColumns, Math.Max(options.MaxGroupRows, 1));
         var totalGroups = topLevel.Count;
 
         var pageGroups = topLevel
@@ -83,7 +83,8 @@ public static class GridGrouper<T>
         string parentPath,
         IReadOnlyList<GridColumn<T>> columns,
         HashSet<string> expanded,
-        IReadOnlyList<GridColumn<T>> aggregateColumns)
+        IReadOnlyList<GridColumn<T>> aggregateColumns,
+        int maxGroupRows)
     {
         var keyFormat = columns[level].RawKeyFormat!;
         var field = columns[level].Field;
@@ -112,11 +113,12 @@ public static class GridGrouper<T>
             {
                 if (level + 1 < columns.Count)
                 {
-                    children = BuildLevel(bucket, level + 1, path, columns, expanded, aggregateColumns);
+                    children = BuildLevel(bucket, level + 1, path, columns, expanded, aggregateColumns, maxGroupRows);
                 }
                 else
                 {
-                    leafRows = bucket;
+                    // The header keeps the full count; the renderer notes how many rows are shown.
+                    leafRows = bucket.Count > maxGroupRows ? bucket.GetRange(0, maxGroupRows) : bucket;
                 }
             }
 

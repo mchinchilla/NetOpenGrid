@@ -187,6 +187,22 @@ public sealed class GridHtmlRenderer<TItem>
             AppendDataRow(w, row, columns);
         }
 
+        // An expanded group renders at most MaxGroupRows rows: say so instead of cutting silently.
+        if (group.Children.Count == 0 && group.Rows.Count > 0 && group.Rows.Count < group.Count)
+        {
+            w.Write("<tr class=\"group-truncated\" data-group-truncated=\"");
+            AppendEncoded(w, group.Path);
+            w.Write("\"><td colspan=\"");
+            w.Write(ColumnSpan(columns).ToString(CultureInfo.InvariantCulture));
+            w.Write("\" class=\"px-4 py-2 text-xs text-neutral-500 dark:text-neutral-400\" style=\"padding-left:");
+            w.Write((GroupIndent(group.Level) + 16).ToString(CultureInfo.InvariantCulture));
+            w.Write("px\">");
+            AppendEncoded(w, L("group.rows.truncated")
+                .Replace("{shown}", group.Rows.Count.ToString("N0", CultureInfo.CurrentCulture))
+                .Replace("{total}", group.Count.ToString("N0", CultureInfo.CurrentCulture)));
+            w.Write("</td></tr>");
+        }
+
         if (expanded && _options.ShowsAggregates(GridAggregateRows.GroupFooter) && !group.Aggregates.IsEmpty)
         {
             w.Write("<tr class=\"agg-row agg-subtotal border-b border-neutral-200 bg-neutral-50/40 dark:border-neutral-800 dark:bg-neutral-800/20\" data-group-footer=\"");

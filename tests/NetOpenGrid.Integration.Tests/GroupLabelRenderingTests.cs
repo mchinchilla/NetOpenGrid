@@ -54,6 +54,17 @@ public class GroupLabelRenderingTests
         Assert.DoesNotContain("#3", html);
     }
 
+    [Fact]
+    public async Task A_capped_group_says_how_many_rows_it_shows()
+    {
+        using var host = await BuildHostAsync();
+        var html = await host.GetTestClient().GetStringAsync(
+            "/netgrid/payments-capped/rows?groupby=status&expand=" + Uri.EscapeDataString("status=Approved"));
+
+        Assert.Contains("data-group-truncated=\"status=Approved\"", html);
+        Assert.Contains("Showing 1 of 2 rows in this group", html);
+    }
+
     private static async Task<IHost> BuildHostAsync()
     {
         var builder = new HostBuilder()
@@ -69,6 +80,11 @@ public class GroupLabelRenderingTests
                             .AddColumn("status", p => p.Status, c => c
                                 .Format(Display)
                                 .RawCellHtml(p => $"<b>{Display(p.Status)}</b>")),
+                            (_, opts) => new InMemoryGridDataSource<Payment>(opts, Payments))
+                        .AddGrid<Payment>("payments-capped", options => options
+                            .WithMaxGroupRows(1)
+                            .AddColumn("id", p => p.Id, c => c.Format(v => "#" + v))
+                            .AddColumn("status", p => p.Status, c => c.Format(Display)),
                             (_, opts) => new InMemoryGridDataSource<Payment>(opts, Payments));
                 });
                 webHost.Configure(app =>

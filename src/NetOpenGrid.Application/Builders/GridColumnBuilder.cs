@@ -288,6 +288,7 @@ public sealed class GridColumnBuilder<TSource, TKey>
             FilterValueParser = BuildFilterValueParser(),
             RawKeyFormat = BuildRawKeyFormat(),
             KeyFormatter = BuildKeyFormatter(),
+            RawKeyFormatter = static boxed => boxed is TKey key ? DefaultValueFormatter<TKey>.Format(key) : null,
             AllowedOps = allowedOps,
             IsSortable = sortStrategy is not null,
             IsSearchable = searchStrategy is not null,

@@ -57,6 +57,13 @@ public sealed class GridColumn<T>
     /// <summary>Grouped key (boxed) → raw display string; EF value-count lists.</summary>
     public Func<object?, string?>? KeyFormatter { get; init; }
 
+    /// <summary>
+    /// Grouped key (boxed) → the same raw, parseable string as <see cref="RawKeyFormat"/>, ignoring the
+    /// column's custom format. SQL grouping uses it for the group path, so a group computed in the
+    /// database carries the same key as one built in memory.
+    /// </summary>
+    public Func<object?, string?>? RawKeyFormatter { get; init; }
+
     /// <summary>Pinned columns stay visible during horizontal scroll (CSS sticky, left edge).</summary>
     public bool IsPinned { get; init; }
 

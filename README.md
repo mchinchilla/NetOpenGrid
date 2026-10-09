@@ -690,7 +690,12 @@ GET /netgrid/:id/rows?groupby=department,city&expand=department=Design|city=Lima
   con su nombre para mostrar, un monto o una fecha formateados) y el valor crudo sigue viajando en `expand=`.
   Sin formato, o si el formato no devuelve nada, se muestra el valor crudo.
 - El orden de los grupos respeta el sort de la columna agrupada; los sorts restantes ordenan dentro de cada grupo.
-- Motores: in-memory y JSON agrupan en memoria; **EF Core** hace push-down de filtro+orden a SQL y construye el árbol sobre las filas coincidentes.
+- Motores: in-memory y JSON agrupan en memoria; **EF Core** agrupa en SQL: un `GROUP BY` con conteo por nivel,
+  ordenado y paginado en la base, y filas solo de los grupos expandidos. Nunca trae todo el conjunto filtrado:
+  agrupar millones de filas cuesta un recorrido de agregación, no cargarlas. Una columna de grupo sin selector
+  de expresión vuelve al agrupamiento en memoria.
+- Un grupo expandido muestra hasta `.WithMaxGroupRows(n)` filas (500 por defecto); el header conserva el
+  conteo total y una nota dice cuántas se muestran.
 
 ## ➕ Agregados (SUM · AVG · MIN · MAX)
 
@@ -802,6 +807,7 @@ bloques mientras bajas, y en el DOM solo quedan los bloques cerca de lo que ves.
 | `.WithTitle / .WithSubtitle` | `"Data grid"` | Encabezado del shell |
 | `.WithDefaultPageSize(n)` | `25` | Se clampéa a `[1, MaxPageSize]` |
 | `.WithMaxPageSize(n)` | `500` | Techo duro del servidor |
+| `.WithMaxGroupRows(n)` | `500` | Filas que muestra un grupo expandido |
 | `.WithPageSizeChoices([...])` | `[10,25,50,100]` | Se ordenan y deduplican |
 | `.WithDebounce(ms)` | `300` | Búsqueda global |
 | `.WithTheme(name)` | `"grid"` | Compila a `netopengrid-{name}.css` |

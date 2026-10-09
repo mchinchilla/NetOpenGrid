@@ -691,7 +691,12 @@ GET /netgrid/:id/rows?groupby=department,city&expand=department=Design|city=Lima
   as its display name, an amount or a date formatted), while the raw value keeps travelling in `expand=`.
   Without a format, or when the format yields nothing, the raw value is shown.
 - Group order follows the grouped column's sort; remaining sorts order rows inside each group.
-- Engines: in-memory and JSON group in memory; **EF Core** pushes filter+sort down to SQL and builds the tree over the matching rows.
+- Engines: in-memory and JSON group in memory; **EF Core** groups in SQL: one `GROUP BY` with a count per
+  level, ordered and paged in the database, and rows only for the expanded groups. It never loads the whole
+  filtered set: grouping millions of rows costs one aggregate scan, not loading them. A group column without
+  an expression selector falls back to in-memory grouping.
+- An expanded group renders up to `.WithMaxGroupRows(n)` rows (500 by default); the header keeps the full
+  count and a note says how many are shown.
 
 ## ➕ Aggregates (SUM · AVG · MIN · MAX)
 
@@ -802,6 +807,7 @@ you scroll down, and only the blocks near the viewport stay in the DOM.
 | `.WithTitle / .WithSubtitle` | `"Data grid"` | Shell header |
 | `.WithDefaultPageSize(n)` | `25` | Clamped to `[1, MaxPageSize]` |
 | `.WithMaxPageSize(n)` | `500` | Hard server ceiling |
+| `.WithMaxGroupRows(n)` | `500` | Rows an expanded group renders |
 | `.WithPageSizeChoices([...])` | `[10,25,50,100]` | Sorted and deduplicated |
 | `.WithDebounce(ms)` | `300` | Global search |
 | `.WithTheme(name)` | `"grid"` | Compiles to `netopengrid-{name}.css` |

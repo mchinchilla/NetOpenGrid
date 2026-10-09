@@ -24,6 +24,12 @@ public sealed class GridOptions<T>
     /// <summary>Max distinct values returned by Excel-style value-count lists.</summary>
     public int FilterValuesLimit { get; init; } = 200;
 
+    /// <summary>
+    /// Max rows an expanded (deepest-level) group renders. The group header keeps the full count and
+    /// a note says how many are shown, so a group of a million rows never lands in one response.
+    /// </summary>
+    public int MaxGroupRows { get; init; } = 500;
+
     /// <summary>Server-defined views every user sees in the views menu.</summary>
     public IReadOnlyList<GridSavedView> Views { get; init; } = [];
 

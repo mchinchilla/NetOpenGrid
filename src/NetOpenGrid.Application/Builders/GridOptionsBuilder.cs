@@ -25,6 +25,7 @@ public sealed class GridOptionsBuilder<T>
     private string _theme = "grid";
     private string _minHeight = "64rem";
     private int _filterValuesLimit = 200;
+    private int _maxGroupRows = 500;
     private int _maxExportRows = 100_000;
     private GridExportFormats _exportFormats = GridExportFormats.All;
     private readonly List<(string Name, string Query)> _views = [];
@@ -103,6 +104,13 @@ public sealed class GridOptionsBuilder<T>
     public GridOptionsBuilder<T> WithFilterValuesLimit(int limit)
     {
         _filterValuesLimit = Math.Max(limit, 1);
+        return this;
+    }
+
+    /// <summary>Max rows an expanded group renders (default 500); the header keeps the full count.</summary>
+    public GridOptionsBuilder<T> WithMaxGroupRows(int limit)
+    {
+        _maxGroupRows = Math.Max(limit, 1);
         return this;
     }
 
@@ -302,6 +310,7 @@ public sealed class GridOptionsBuilder<T>
             Theme = _theme,
             MinHeight = _minHeight,
             FilterValuesLimit = _filterValuesLimit,
+            MaxGroupRows = _maxGroupRows,
             MaxExportRows = _maxExportRows,
             ExportFormats = _exportFormats,
             Views = BuildViews(),
