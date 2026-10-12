@@ -529,7 +529,7 @@ Reglas importantes:
 | Regla | Detalle |
 |---|---|
 | 🧾 **Columnas con Expression** | Para push-down, define las columnas con los overloads `AddColumn(e => e.Prop, …)`. Si una columna ordenable/filtrable solo tiene `Func`, falla al construir con un error que lista los campos. |
-| 🔤 **Strings vía `LIKE`** | `contains/starts-with/ends-with/equals` se traducen a `EF.Functions.Like` (insensible a mayúsculas en collations por defecto; wildcards escapados). |
+| 🔤 **Strings vía `LIKE`** | `contains/starts-with/ends-with/equals/in` y la búsqueda rápida se traducen a `lower(columna) LIKE lower(patrón)` con `EF.Functions.Like`: insensibles a mayúsculas en cualquier proveedor (el `LIKE` simple de PostgreSQL no lo es), igual que el pipeline en memoria; wildcards escapados. |
 | 🔢 **Valores parseados 1 vez** | El literal del filtro se parsea con el **mismo** parser invariante del pipeline in-memory y se incrusta como constante en el árbol. |
 | 🧵 **DbContext con scope** | El data source crea un `IServiceScope` por request — tu `DbContext` registrado como scoped funciona tal cual. |
 | ↩️ **Orden estable** | SQL no garantiza estabilidad en empates: agrega un sort por columna única para paginación determinista. |

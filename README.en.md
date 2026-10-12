@@ -530,7 +530,7 @@ Important rules:
 | Rule | Detail |
 |---|---|
 | 🧾 **Expression columns** | For push-down, define columns with the `AddColumn(e => e.Prop, …)` overloads. If a sortable/filterable/searchable column only has a `Func`, construction fails with an error listing the offending fields. |
-| 🔤 **Strings via `LIKE`** | `contains/starts-with/ends-with/equals` translate to `EF.Functions.Like` (case-insensitive under default collations; wildcards escaped). |
+| 🔤 **Strings via `LIKE`** | `contains/starts-with/ends-with/equals/in` and the quick search translate to `lower(column) LIKE lower(pattern)` with `EF.Functions.Like`: case-insensitive on every provider (PostgreSQL's plain `LIKE` is not), like the in-memory pipeline; wildcards escaped. |
 | 🔢 **Values parsed once** | The filter literal is parsed with the **same** invariant parser as the in-memory pipeline and embedded as a constant in the tree. |
 | 🧵 **Scoped DbContext** | The data source creates an `IServiceScope` per request — a scoped `DbContext` works as-is. |
 | ↩️ **Stable ordering** | SQL does not guarantee stable ties: add a sort on a unique column for deterministic paging. |

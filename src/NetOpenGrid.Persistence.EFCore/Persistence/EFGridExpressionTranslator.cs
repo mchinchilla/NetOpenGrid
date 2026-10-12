@@ -18,6 +18,9 @@ internal static class EFGridExpressionTranslator
         .GetMethod(nameof(DbFunctionsExtensions.Like), [typeof(DbFunctions), typeof(string), typeof(string), typeof(string)])
         ?? throw new InvalidOperationException("EF.Functions.Like(match, pattern, escape) was not found.");
 
+    private static readonly MethodInfo ToLowerMethod = typeof(string).GetMethod(nameof(string.ToLower), Type.EmptyTypes)
+        ?? throw new InvalidOperationException("string.ToLower() was not found.");
+
     public static Expression<Func<T, bool>>? CreateFilter<T>(GridColumn<T> column, FilterOperator op, string? rawValue)
     {
         var lambda = column.SelectorExpression;
@@ -192,12 +195,19 @@ internal static class EFGridExpressionTranslator
             : nullCheck;
     }
 
+    /// <summary>
+    /// <c>lower(column) LIKE lower(pattern)</c>: case-insensitive on every provider, like the in-memory
+    /// pipeline (<c>OrdinalIgnoreCase</c>) and the Npgsql data source (<c>ILIKE</c>). A bare <c>LIKE</c>
+    /// is case-sensitive on PostgreSQL, so "c435" missed "C435BE15"; SQLite hid it because its LIKE
+    /// ignores ASCII case. Wrapping the column in lower() rules out a plain b-tree index for
+    /// StartsWith/Equals, which a grid search ("%term%") could not use anyway.
+    /// </summary>
     private static MethodCallExpression BuildLike(Expression body, string pattern) =>
         Expression.Call(
             LikeMethod,
             Expression.Property(null, typeof(EF).GetProperty(nameof(EF.Functions))!),
-            body,
-            Expression.Constant(pattern),
+            Expression.Call(body, ToLowerMethod),
+            Expression.Constant(pattern.ToLowerInvariant()),
             Expression.Constant("\\", typeof(string)));
 
     private static Expression<Func<T, bool>> BuildLambda<T>(Expression body, ParameterExpression parameter) =>

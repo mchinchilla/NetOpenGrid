@@ -21,6 +21,15 @@ public sealed class EFCoreGridDataSourceTests : IDisposable
         _connection = new SqliteConnection("DataSource=:memory:");
         _connection.Open();
 
+        // SQLite's LIKE ignores ASCII case; PostgreSQL's does not (and SQL Server's depends on the
+        // collation). A case-sensitive LIKE makes these tests prove the translation itself is
+        // case-insensitive instead of leaning on the test provider.
+        using (var pragma = _connection.CreateCommand())
+        {
+            pragma.CommandText = "PRAGMA case_sensitive_like = ON;";
+            pragma.ExecuteNonQuery();
+        }
+
         var dbOptions = new DbContextOptionsBuilder<TestDb>()
             .UseSqlite(_connection)
             .Options;
@@ -98,6 +107,40 @@ public sealed class EFCoreGridDataSourceTests : IDisposable
         Assert.Equal(expected, page.TotalCount);
     }
 
+    [Theory]
+    [InlineData(FilterOperator.StartsWith, "turbo w")]
+    [InlineData(FilterOperator.EndsWith, "WIDGET 05")]
+    public async Task StringStartsAndEndsWith_AreCaseInsensitive_LikeInMemory(FilterOperator op, string value)
+    {
+        var expected = EfProductData.All.Count(p => op == FilterOperator.StartsWith
+            ? p.Name.StartsWith(value, StringComparison.OrdinalIgnoreCase)
+            : p.Name.EndsWith(value, StringComparison.OrdinalIgnoreCase));
+
+        var page = await CreateSource().LoadAsync(new GridQuery(
+            new PageRequest(1, 50),
+            [new SortDescriptor("id")],
+            [new FilterDescriptor("name", op, value)],
+            null));
+
+        Assert.True(expected > 0);
+        Assert.Equal(expected, page.TotalCount);
+    }
+
+    [Fact]
+    public async Task StringNotEquals_IsCaseInsensitive_LikeInMemory()
+    {
+        var expected = EfProductData.All.Count(p => !p.Category.Equals("electronics", StringComparison.OrdinalIgnoreCase));
+
+        var page = await CreateSource().LoadAsync(new GridQuery(
+            new PageRequest(1, 50),
+            [new SortDescriptor("id")],
+            [new FilterDescriptor("category", FilterOperator.NotEquals, "electronics")],
+            null));
+
+        Assert.Equal(expected, page.TotalCount);
+        Assert.All(page.Items, p => Assert.NotEqual("Electronics", p.Category));
+    }
+
     [Fact]
     public async Task BoolAndDateOnly_FiltersTranslate()
     {
@@ -120,10 +163,12 @@ public sealed class EFCoreGridDataSourceTests : IDisposable
         Assert.Equal(expectedDates, datePage.TotalCount);
     }
 
-    [Fact]
-    public async Task GlobalSearch_OrsAcrossSearchableColumns()
+    [Theory]
+    [InlineData("turbo")]
+    [InlineData("TURBO")]
+    [InlineData("ELECTRON")]
+    public async Task GlobalSearch_OrsAcrossSearchableColumns(string term)
     {
-        var term = "turbo";
         var expected = EfProductData.All.Count(p =>
             p.Name.Contains(term, StringComparison.OrdinalIgnoreCase) ||
             p.Category.Contains(term, StringComparison.OrdinalIgnoreCase));
@@ -228,6 +273,20 @@ public sealed class EFCoreGridDataSourceTests : IDisposable
 
         Assert.Equal(expected, page.TotalCount);
         Assert.All(page.Items, p => Assert.Contains(p.Category, new List<string> { "Electronics", "Toys" }));
+    }
+
+    [Fact]
+    public async Task InFilter_IsCaseInsensitive_LikeInMemory()
+    {
+        var expected = EfProductData.All.Count(p => p.Category is "Electronics" or "Toys");
+
+        var page = await CreateSource().LoadAsync(new GridQuery(
+            new PageRequest(1, 50),
+            [new SortDescriptor("id")],
+            [new FilterDescriptor("category", FilterOperator.In, """["electronics","TOYS"]""")],
+            null));
+
+        Assert.Equal(expected, page.TotalCount);
     }
 
     [Fact]

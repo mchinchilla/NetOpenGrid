@@ -144,7 +144,7 @@ builder.Services.AddNetOpenGrid().AddGrid<Employee>("employees",
 
 - Define columns with the `AddColumn(e => e.Prop, ...)` expression overloads. A sortable, filterable or
   searchable column that only has a `Func` fails at construction with the offending fields listed.
-- String operators translate to `EF.Functions.Like` with escaped wildcards.
+- String operators and the quick search translate to `lower(column) LIKE lower(pattern)` (`EF.Functions.Like`, escaped wildcards): case-insensitive on every provider, PostgreSQL included.
 - Filter literals are parsed once with the same invariant parser as the in-memory pipeline and embedded
   as constants in the expression tree.
 - The data source opens an `IServiceScope` per request, so a scoped `DbContext` works as-is.
