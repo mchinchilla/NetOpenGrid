@@ -1,0 +1,82 @@
+/* Shared by every theme in themes/*.css (imported right after tailwindcss).
+
+   Lives in a subfolder on purpose: tools/build-themes.sh compiles each themes/*.css into its
+   own embedded theme, and this file is a partial, not a theme.
+
+   1. Brand colour from ONE value.
+
+   A consumer sets a single custom property, `--ng-brand`, to the colour it uses for its own
+   primary buttons (the `brand-600` step), either with NetOpenGridAssetOptions.BrandColor /
+   WithBrandColor(...) or from its own CSS (`:root { --ng-brand: #0d9488; }`). The other nine
+   steps are mixed from it here, towards white for the lighter ones and towards black for the
+   darker ones, in oklch so the hue does not drift.
+
+   While `--ng-brand` is NOT set, every `--ng-brand-*` below is invalid at computed-value time
+   (a var() without fallback that points at nothing), so each theme's own
+   `--color-brand-N: var(--ng-brand-N, <hex>)` falls back to its hand-tuned hex value: the
+   default look is the theme's palette, pixel for pixel, not an approximation of it.
+
+   The percentages follow the lightness of Tailwind's own scales around a 600 of L≈0.60
+   (teal, cyan, blue...): 50 ≈ 0.98, 100 ≈ 0.95, 300 ≈ 0.85, 500 ≈ 0.70, 700 ≈ 0.51,
+   900 ≈ 0.38. A single step can still be tuned by hand (`--ng-brand-700: ...`).
+
+   The utilities keep pointing at the variables after compilation (`var(--color-brand-600)`,
+   and `color-mix(in oklab, var(--color-brand-900) 40%, transparent)` for the opacity
+   modifiers), so overriding at runtime works. Lightning CSS, which Tailwind runs on the
+   output, adds a `--ng-brand-N: var(--ng-brand)` fallback for browsers without color-mix()
+   (pre-2023); those keep their solid hex fallbacks for the translucent utilities anyway. */
+@layer base {
+  :root {
+    --ng-brand-50: color-mix(in oklch, var(--ng-brand) 5%, white);
+    --ng-brand-100: color-mix(in oklch, var(--ng-brand) 12%, white);
+    --ng-brand-200: color-mix(in oklch, var(--ng-brand) 23%, white);
+    --ng-brand-300: color-mix(in oklch, var(--ng-brand) 37%, white);
+    --ng-brand-400: color-mix(in oklch, var(--ng-brand) 56%, white);
+    --ng-brand-500: color-mix(in oklch, var(--ng-brand) 75%, white);
+    --ng-brand-600: var(--ng-brand);
+    --ng-brand-700: color-mix(in oklch, var(--ng-brand) 85%, black);
+    --ng-brand-800: color-mix(in oklch, var(--ng-brand) 73%, black);
+    --ng-brand-900: color-mix(in oklch, var(--ng-brand) 64%, black);
+  }
+}
+
+/* 2. Semantic badges for RawCellHtml cells.
+
+   Tailwind only keeps the utilities the renderer itself emits, so a consumer's cell HTML
+   cannot rely on arbitrary utilities (`bg-teal-100` simply is not in the compiled theme).
+   These classes are the contract instead: `badge` (defined by each theme, it owns the
+   shape) plus one of the variants below, in every theme, light and dark.
+
+   The older product/order names stay as aliases of the semantic ones so existing cells
+   keep rendering: delivered = success, pending = warning, cancelled = danger,
+   shipped = info, muted = neutral. */
+@layer components {
+  .badge-success,
+  .badge-delivered {
+    @apply bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300;
+  }
+
+  .badge-warning,
+  .badge-pending {
+    @apply bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300;
+  }
+
+  .badge-danger,
+  .badge-cancelled {
+    @apply bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300;
+  }
+
+  .badge-info,
+  .badge-shipped {
+    @apply bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300;
+  }
+
+  .badge-neutral,
+  .badge-muted {
+    @apply bg-neutral-200 text-neutral-600 dark:bg-neutral-700 dark:text-neutral-300;
+  }
+
+  .badge-brand {
+    @apply bg-brand-100 text-brand-700 dark:bg-brand-900/40 dark:text-brand-300;
+  }
+}

@@ -23,6 +23,8 @@ public sealed class GridOptionsBuilder<T>
     private int[] _pageSizeChoices = [10, 25, 50, 100];
     private int _debounceMilliseconds = 300;
     private string _theme = "grid";
+    private string? _brandColor;
+    private readonly List<string> _stylesheets = [];
     private string _minHeight = "64rem";
     private int _filterValuesLimit = 200;
     private int _maxGroupRows = 500;
@@ -90,6 +92,29 @@ public sealed class GridOptionsBuilder<T>
     public GridOptionsBuilder<T> WithTheme(string themeName)
     {
         _theme = themeName;
+        return this;
+    }
+
+    /// <summary>
+    /// Brand colour of this grid (the <c>brand-600</c> step: primary buttons, links, focus rings);
+    /// the theme mixes the lighter and darker steps from it. Overrides
+    /// <c>NetOpenGridAssetOptions.BrandColor</c> in this grid's own document. Accepts <c>#rrggbb</c>,
+    /// a named colour or one colour function (<c>oklch(0.6 0.118 185)</c>); anything else throws.
+    /// </summary>
+    public GridOptionsBuilder<T> WithBrandColor(string color)
+    {
+        _brandColor = GridCssColor.Validate(color);
+        return this;
+    }
+
+    /// <summary>
+    /// Links a stylesheet in this grid's own document, after the theme and the global
+    /// <c>ExtraStylesheets</c>, so small overrides win. Relative or http(s) URLs only; call it
+    /// again to add more.
+    /// </summary>
+    public GridOptionsBuilder<T> WithStylesheet(string url)
+    {
+        _stylesheets.Add(GridUrl.ValidateStylesheet(url));
         return this;
     }
 
@@ -308,6 +333,8 @@ public sealed class GridOptionsBuilder<T>
             PageSizeChoices = _pageSizeChoices,
             DebounceMilliseconds = _debounceMilliseconds,
             Theme = _theme,
+            BrandColor = _brandColor,
+            Stylesheets = _stylesheets.ToArray(),
             MinHeight = _minHeight,
             FilterValuesLimit = _filterValuesLimit,
             MaxGroupRows = _maxGroupRows,

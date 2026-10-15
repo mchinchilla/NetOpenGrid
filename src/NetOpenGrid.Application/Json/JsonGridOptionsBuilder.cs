@@ -21,6 +21,8 @@ public sealed class JsonGridOptionsBuilder
     private int[] _pageSizeChoices = [10, 25, 50, 100];
     private int _debounceMilliseconds = 300;
     private string _theme = "grid";
+    private string? _brandColor;
+    private readonly List<string> _stylesheets = [];
     private string _minHeight = "64rem";
     private int _filterValuesLimit = 200;
     private int _maxGroupRows = 500;
@@ -51,6 +53,10 @@ public sealed class JsonGridOptionsBuilder
     public JsonGridOptionsBuilder WithPageSizeChoices(params int[] choices) { _pageSizeChoices = choices; return this; }
     public JsonGridOptionsBuilder WithDebounce(int milliseconds) { _debounceMilliseconds = milliseconds; return this; }
     public JsonGridOptionsBuilder WithTheme(string themeName) { _theme = themeName; return this; }
+    /// <summary>Brand colour of this grid (see <c>GridOptionsBuilder.WithBrandColor</c>).</summary>
+    public JsonGridOptionsBuilder WithBrandColor(string color) { _brandColor = GridCssColor.Validate(color); return this; }
+    /// <summary>Stylesheet linked after the theme in this grid's document (see <c>GridOptionsBuilder.WithStylesheet</c>).</summary>
+    public JsonGridOptionsBuilder WithStylesheet(string url) { _stylesheets.Add(GridUrl.ValidateStylesheet(url)); return this; }
     public JsonGridOptionsBuilder WithMinHeight(string minHeight) { _minHeight = minHeight?.Trim() ?? string.Empty; return this; }
     public JsonGridOptionsBuilder WithFilterValuesLimit(int limit) { _filterValuesLimit = Math.Max(limit, 1); return this; }
     public JsonGridOptionsBuilder WithMaxGroupRows(int limit) { _maxGroupRows = Math.Max(limit, 1); return this; }
@@ -196,6 +202,8 @@ public sealed class JsonGridOptionsBuilder
             PageSizeChoices = _pageSizeChoices.Distinct().Order().ToArray(),
             DebounceMilliseconds = _debounceMilliseconds,
             Theme = _theme,
+            BrandColor = _brandColor,
+            Stylesheets = _stylesheets.ToArray(),
             MinHeight = _minHeight,
             FilterValuesLimit = _filterValuesLimit,
             MaxGroupRows = _maxGroupRows,

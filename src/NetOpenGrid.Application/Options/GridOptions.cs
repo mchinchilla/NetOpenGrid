@@ -17,6 +17,16 @@ public sealed class GridOptions<T>
     public int DebounceMilliseconds { get; init; } = 300;
     public string Theme { get; init; } = "grid";
 
+    /// <summary>
+    /// This grid's brand colour (the <c>brand-600</c> step; the theme mixes the rest of the scale
+    /// from it). Overrides <c>NetOpenGridAssetOptions.BrandColor</c> in this grid's own document;
+    /// null keeps the global value, or the theme's own palette when there is none.
+    /// </summary>
+    public string? BrandColor { get; init; }
+
+    /// <summary>Stylesheets this grid's own document links after the theme (and after the global <c>ExtraStylesheets</c>).</summary>
+    public IReadOnlyList<string> Stylesheets { get; init; } = [];
+
     /// <summary>Minimum table-card height (CSS value). Keeps the grid from collapsing
     /// when few rows match; default ≈ 25 rows. Empty string disables it.</summary>
     public string MinHeight { get; init; } = "64rem";

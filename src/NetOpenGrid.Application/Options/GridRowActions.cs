@@ -114,4 +114,33 @@ public static class GridUrl
         var scheme = trimmed[..colon].ToLowerInvariant();
         return scheme is "http" or "https" or "mailto" or "tel" ? trimmed : null;
     }
+
+    /// <summary>
+    /// Stricter variant for <c>&lt;link rel="stylesheet"&gt;</c> hrefs (<c>ExtraStylesheets</c>,
+    /// <c>WithStylesheet</c>): relative or http(s) only. <c>mailto:</c>/<c>tel:</c> make no sense
+    /// there, and <c>javascript:</c>/<c>data:</c> are dropped like everywhere else.
+    /// </summary>
+    public static string? Stylesheet(string? url)
+    {
+        var safe = Safe(url);
+        if (safe is null)
+        {
+            return null;
+        }
+
+        var colon = safe.IndexOf(':');
+        var slash = safe.IndexOfAny(['/', '?', '#']);
+        if (colon < 0 || (slash >= 0 && slash < colon))
+        {
+            return safe;
+        }
+
+        var scheme = safe[..colon].ToLowerInvariant();
+        return scheme is "http" or "https" ? safe : null;
+    }
+
+    /// <summary>The trimmed stylesheet URL, or <see cref="GridConfigurationException"/> when <see cref="Stylesheet"/> rejects it.</summary>
+    public static string ValidateStylesheet(string? url) =>
+        Stylesheet(url) ?? throw new GridConfigurationException(
+            $"Stylesheet URL '{url}' is not allowed. Use a relative URL or an absolute http(s) one.");
 }

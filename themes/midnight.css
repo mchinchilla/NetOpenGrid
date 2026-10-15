@@ -1,4 +1,6 @@
 @import "tailwindcss";
+/* --ng-brand derivation and the semantic badge set, identical in every theme. */
+@import "./shared/brand-and-badges.css";
 
 @custom-variant dark (&:where(.dark, .dark *));
 
@@ -22,6 +24,11 @@
 @source not "../src/NetOpenGrid.Persistence.EFCore";
 @source not "../src/NetOpenGrid.Persistence.Npgsql";
 @source not "../tests";
+/* The docs name utilities on purpose (a README example saying `bg-teal-100` is NOT available
+   put .bg-teal-100 into every theme): prose must not change the CSS either. */
+@source not "../README.md";
+@source not "../README.en.md";
+@source not "../docs";
 
 @theme {
   --color-brand-50: #ecfeff;
@@ -36,6 +43,27 @@
   --color-brand-900: #164e63;
 
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+}
+
+/* The brand scale in @theme is this theme's default. Each step yields to the colour derived
+   from --ng-brand once a consumer sets one (see shared/brand-and-badges.css); unset, the
+   var() falls back to the same hex, so the default look does not change. @layer base
+   outranks the @layer theme copy Tailwind emits from @theme, and keeping the hex in @theme
+   keeps Tailwind's precomputed fallbacks for browsers without color-mix(). */
+@layer base {
+  :root,
+  :host {
+    --color-brand-50: var(--ng-brand-50, #ecfeff);
+    --color-brand-100: var(--ng-brand-100, #cffafe);
+    --color-brand-200: var(--ng-brand-200, #a5f3fc);
+    --color-brand-300: var(--ng-brand-300, #67e8f9);
+    --color-brand-400: var(--ng-brand-400, #22d3ee);
+    --color-brand-500: var(--ng-brand-500, #06b6d4);
+    --color-brand-600: var(--ng-brand-600, #0891b2);
+    --color-brand-700: var(--ng-brand-700, #0e7490);
+    --color-brand-800: var(--ng-brand-800, #155e75);
+    --color-brand-900: var(--ng-brand-900, #164e63);
+  }
 }
 
 @layer components {
@@ -65,29 +93,5 @@
 
   .badge {
     @apply inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium;
-  }
-
-  .badge-success {
-    @apply bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300;
-  }
-
-  .badge-muted {
-    @apply bg-neutral-200 text-neutral-600 dark:bg-neutral-700 dark:text-neutral-300;
-  }
-
-  .badge-pending {
-    @apply bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300;
-  }
-
-  .badge-shipped {
-    @apply bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300;
-  }
-
-  .badge-delivered {
-    @apply bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300;
-  }
-
-  .badge-cancelled {
-    @apply bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300;
   }
 }

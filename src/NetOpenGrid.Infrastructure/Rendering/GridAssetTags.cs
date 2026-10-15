@@ -42,6 +42,12 @@ public static class GridAssetTags
         }
         sb.Append("\">");
 
+        // Global brand colour and extra stylesheets (per-grid ones live in each grid's own document).
+        using (var writer = new StringWriter(sb))
+        {
+            GridThemeOverrides.Write(writer, assetOptions.BrandColor, assetOptions.ExtraStylesheets);
+        }
+
         sb.Append("<style>[x-cloak]{display:none!important}</style>");
         sb.Append("<script src=\"").Append(prefix).Append("/netopengrid.js?v=")
           .Append(Assets.EmbeddedGridAssets.ClientRuntime.Version).Append("\" defer></script>");

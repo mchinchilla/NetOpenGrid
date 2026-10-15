@@ -398,7 +398,7 @@ public sealed class GridHtmlRenderer<TItem>
         w.Write("<tr><td colspan=\"");
         w.Write(ColumnSpan(columns).ToString(CultureInfo.InvariantCulture));
         w.Write("\" class=\"px-4 py-12 text-center text-sm text-neutral-500 dark:text-neutral-400\">");
-        AppendEncoded(w, _options.EmptyMessage);
+        AppendEncoded(w, T(_options.EmptyMessage));
         w.Write("</td></tr>");
     }
 
@@ -577,6 +577,15 @@ public sealed class GridHtmlRenderer<TItem>
             }
         }
         w.Write("\">");
+
+        // Brand colour (the grid's own beats the global one) and extra stylesheets, after the
+        // theme so they override it. Also in an embedded (iframe) document: it is its own page.
+        GridThemeOverrides.Write(
+            w,
+            _options.BrandColor ?? _assetOptions.BrandColor,
+            _assetOptions.ExtraStylesheets,
+            _options.Stylesheets);
+
         w.Write("<style>[x-cloak]{display:none!important}</style>");
         if (embedded)
         {
@@ -619,7 +628,7 @@ public sealed class GridHtmlRenderer<TItem>
             w.Write("<a href=\"");
             AppendEncoded(w, link.Href);
             w.Write("\" class=\"rounded-lg px-3 py-1.5 font-medium text-neutral-600 transition hover:bg-neutral-100 hover:text-neutral-900 dark:text-neutral-300 dark:hover:bg-neutral-800 dark:hover:text-white\">");
-            AppendEncoded(w, link.Label);
+            AppendEncoded(w, T(link.Label));
             w.Write("</a>");
         }
 
@@ -1148,7 +1157,7 @@ public sealed class GridHtmlRenderer<TItem>
             w.Write(_options.RowActionsPinned
                 ? "<th scope=\"col\" data-actions data-pin-right=\"__actions\" style=\"right:0\" class=\"sticky z-30 border-l border-neutral-200 bg-neutral-50 px-4 py-3 text-right font-medium text-neutral-600 select-none dark:border-neutral-800 dark:bg-[color:color-mix(in_oklab,var(--color-neutral-800)_60%,var(--color-neutral-900))] dark:text-neutral-300\">"
                 : "<th scope=\"col\" data-actions class=\"px-4 py-3 text-right font-medium text-neutral-600 select-none dark:text-neutral-300\">");
-            AppendEncoded(w, _options.RowActionsHeader ?? L("actions.header"));
+            AppendEncoded(w, _options.RowActionsHeader is { } header ? T(header) : L("actions.header"));
             w.Write("</th>");
         }
 
@@ -1317,7 +1326,7 @@ public sealed class GridHtmlRenderer<TItem>
             }
 
             w.Write("\" class=\"px-4 py-12 text-center text-sm text-neutral-500 align-middle dark:text-neutral-400\">");
-            AppendEncoded(w, _options.EmptyMessage);
+            AppendEncoded(w, T(_options.EmptyMessage));
             w.Write("</td></tr>");
             return;
         }
@@ -1494,7 +1503,7 @@ public sealed class GridHtmlRenderer<TItem>
                 }
 
                 w.Write('>');
-                AppendEncoded(w, action.Label);
+                AppendEncoded(w, T(action.Label));
                 w.Write("</a>");
                 continue;
             }
@@ -1517,7 +1526,7 @@ public sealed class GridHtmlRenderer<TItem>
             w.Write("\" @click=\"rowAction(");
             AppendJsQuoted(w, action.Name);
             w.Write(", $el.dataset.key)\">");
-            AppendEncoded(w, action.Label);
+            AppendEncoded(w, T(action.Label));
             w.Write("</button>");
         }
 
@@ -1561,7 +1570,7 @@ public sealed class GridHtmlRenderer<TItem>
             }
 
             w.Write("{\"name\":");
-            AppendJsonString(w, _options.Views[i].Name);
+            AppendJsonString(w, T(_options.Views[i].Name));
             w.Write(",\"query\":");
             AppendJsonString(w, _options.Views[i].Query);
             w.Write('}');

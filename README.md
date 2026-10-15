@@ -663,11 +663,17 @@ builder.Services.AddNetOpenGrid(
 - El shell inyecta `__NETGRID__.locale` con el diccionario efectivo: Alpine renderiza chips,
   contadores y rangos con las mismas cadenas (fallbacks EN embebidos en el JS).
 - ~39 claves: `search.*`, `pager.*`, `records.*`, `range.*`, `filter.*`, `select.*`, `chips.*`, `ops.*`, `pin.aria`, `theme.aria`, `export.aria`.
-- El mensaje de vacío sigue siendo `WithEmptyMessage(...)` (por grid).
 - Varios idiomas en el mismo host: `loc.FollowCurrentUICulture = true` elige el preset por
   `CultureInfo.CurrentUICulture` en cada render (la cultura que fija `UseRequestLocalization`), y
   `loc.TextLocalizer = t => localizer[t]` traduce lo que escribiste tú: cabeceras, título,
-  subtítulo y la cabecera del CSV. El `lang` del documento sigue la misma cultura.
+  subtítulo, la cabecera del CSV, el mensaje de vacío (`WithEmptyMessage`), las etiquetas de las
+  acciones por fila (`Link` y `Event`), la cabecera de acciones cuando la fijas con `Header(...)` (la
+  de fábrica sigue saliendo de la clave `actions.header`), los nombres de las vistas predefinidas
+  (`AddView`) y las etiquetas de `WithNavLinks`. El `lang` del documento sigue la misma cultura.
+- Se aplica en **cada render**, así que puedes configurar claves de recurso
+  (`.WithEmptyMessage("Grid.Empty")`, `a.Link("Grid.Open", …)`) y salen en la cultura de la
+  petición. Un `TextLocalizer` que devuelve el texto tal cual produce exactamente el mismo HTML que
+  no tener ninguno.
 
 ---
 
@@ -811,6 +817,8 @@ bloques mientras bajas, y en el DOM solo quedan los bloques cerca de lo que ves.
 | `.WithPageSizeChoices([...])` | `[10,25,50,100]` | Se ordenan y deduplican |
 | `.WithDebounce(ms)` | `300` | Búsqueda global |
 | `.WithTheme(name)` | `"grid"` | Compila a `netopengrid-{name}.css` |
+| `.WithBrandColor(color)` | `BrandColor` global | Color de marca (paso 600) de este grid; [ver Temas](#-temas-tailwind-v4) |
+| `.WithStylesheet(url)` | — | Hoja extra tras el tema y las globales; relativa o `http(s)`; repetible |
 | `.WithMinHeight(css)` | `"64rem"` | ≈25 filas; evita el colapso al filtrar. `""` lo desactiva |
 | `.WithEmptyMessage(msg)` | `"No records found."` | Estado vacío centrado |
 | `.WithMaxExportRows(n)` | `100000` | Tope del export (CSV y xlsx); por encima responde `422` |
@@ -853,6 +861,8 @@ bloques mientras bajas, y en el DOM solo quedan los bloques cerca de lo que ves.
 | `o.AssetPrefix` | `/_netgrid` | Prefijo para `netopengrid.js` + `vendor/*` + `css/netopengrid-{theme}.css` |
 | `o.CssPath` | `null` | Si se asigna, sirve **tu** css de themes desde esa ruta en vez del tema embebido |
 | `o.CssFilePrefix` | `netopengrid-` | Nomenclatura de tu css propio; solo aplica si `CssPath` está asignado |
+| `o.BrandColor` | `null` | Color de marca (paso 600) del que cada tema deriva su escala `brand-*`; `null` = paleta del tema |
+| `o.ExtraStylesheets` | `[]` | Hojas que se enlazan **después** del tema en todo documento del grid; relativas o `http(s)` |
 
 Caché: `Cache-Control: immutable` + `?v={sha256-12}` — cero trabajo de copiado a `wwwroot` con el tema embebido por defecto.
 
@@ -939,7 +949,69 @@ Propiedades faltantes se comportan como `null` (orden inferior, `is-empty` ✓).
   que emite el servidor — por eso no hay CSS muerto ni safelist manual.
 - `@custom-variant dark (&:where(.dark, .dark *))` + toggle persistido en `localStorage`
   (script anti-FOUC inline en el shell).
-- Crea el tuyo copiando `themes/grid.css` y ajustando `@theme { --color-brand-*: … }`.
+- Crea el tuyo copiando `themes/grid.css` y ajustando `@theme { --color-brand-*: … }`. Para solo
+  cambiar el color no hace falta: basta `--ng-brand` (abajo).
+
+### Adaptar el grid a la identidad de tu app
+
+Sin copiar ni parchear el tema compilado: un color y, si hace falta, una hoja pequeña que se
+carga **después** del tema.
+
+```csharp
+builder.Services.AddNetOpenGrid(assets =>
+{
+    assets.BrandColor = "#0d9488";                          // el brand-600 de tu app
+    assets.ExtraStylesheets.Add("/css/grid-overrides.css"); // después del tema: tus reglas ganan
+})
+.AddGrid<Trunk>("trunks", o => o
+    .WithBrandColor("oklch(0.600 0.118 185)")               // por grid: gana sobre el global
+    .WithStylesheet("/css/trunks-grid.css")                 // por grid: después de las globales
+    /* ...columnas... */, (_, opts) => /* ... */);
+```
+
+- **Un solo valor.** `--ng-brand` es el paso 600 (botón primario, enlaces, anillos de foco). Cada
+  tema deriva los demás pasos (`--color-brand-50…900`, los que leen las utilidades) con
+  `color-mix(in oklch, …)` hacia blanco o hacia negro, así que el modo claro y el oscuro siguen
+  cuadrando. Sin `BrandColor` el tema conserva **su paleta exacta**, no una aproximación.
+  Desde CSS también vale: `:root { --ng-brand: #0d9488; }`, y un paso suelto se afina con
+  `--ng-brand-700: …`.
+- `BrandColor` / `WithBrandColor` aceptan `#rgb`, `#rrggbb`, `#rrggbbaa`, un nombre (`teal`) o una
+  función de color sin anidar (`rgb()`, `hsl()`, `hwb()`, `lab()`, `lch()`, `oklab()`, `oklch()`,
+  `color()`). Cualquier otra cosa —`;`, llaves, `<`, comillas, `url(`, `var()`— lanza
+  `GridConfigurationException` al configurar: el valor va dentro de un `<style>`.
+- Orden en el `<head>` del documento del grid: el `<link>` del tema, `<style>:root{--ng-brand:…}</style>`,
+  las `ExtraStylesheets` globales y las `WithStylesheet` del grid. Vale igual con el grid dentro de un
+  iframe (`/netgrid/{id}?embed=1`), que es su propio documento. `GridAssetTags.Head` lleva el color y
+  las hojas globales para una página anfitriona con grids incrustados.
+- Las hojas extra son URL relativas o `http(s)` (las reglas de los enlaces de fila, sin `mailto:` ni
+  `tel:`); otra cosa lanza al añadirla.
+
+**Badges semánticos.** Tailwind solo conserva las clases que emite el renderer, así que una celda
+`RawCellHtml` no puede contar con `bg-teal-100`. Estas clases son el contrato, en **todos** los temas
+y con su variante oscura:
+
+| Clase | Para |
+|---|---|
+| `badge` | la base (forma y tamaño; la define cada tema) |
+| `badge-success` | activo, correcto |
+| `badge-warning` | pendiente, requiere atención |
+| `badge-danger` | fallido, suspendido |
+| `badge-info` | informativo |
+| `badge-neutral` | deshabilitado, inactivo |
+| `badge-brand` | con el color de marca (sigue a `--ng-brand`) |
+
+```csharp
+.AddColumn("status", t => t.Status, c => c.RawCellHtml(t => t.Status switch
+{
+    TrunkStatus.Active    => "<span class=\"badge badge-success\">Active</span>",
+    TrunkStatus.Suspended => "<span class=\"badge badge-warning\">Suspended</span>",
+    TrunkStatus.Failed    => "<span class=\"badge badge-danger\">Failed</span>",
+    _                     => "<span class=\"badge badge-neutral\">Disabled</span>",
+}))
+```
+
+Los nombres anteriores siguen como alias: `badge-delivered` = success, `badge-pending` = warning,
+`badge-cancelled` = danger, `badge-shipped` = info, `badge-muted` = neutral.
 
 ---
 
@@ -1034,6 +1106,8 @@ dotnet test
 - [x] Drag de columnas al panel de grupos (y reordenar niveles arrastrando chips)
 - [x] Pin derecho (columnas y columna de acciones)
 - [x] Virtualización de filas (scroll virtual por bloques)
+- [x] Identidad visual sin tocar el tema: `BrandColor` / `WithBrandColor` (`--ng-brand`), hojas extra (`ExtraStylesheets` / `WithStylesheet`) y badges semánticos en todos los temas (1.2.3)
+- [x] i18n de los textos del grid: mensaje de vacío, acciones por fila, cabecera de acciones, vistas predefinidas y enlaces de navegación pasan por `TextLocalizer` (1.2.3)
 
 ### 🧪 Calidad
 

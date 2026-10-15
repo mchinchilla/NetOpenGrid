@@ -151,4 +151,95 @@ public class LocalizationTests
         var csv = GridCsvExporter.Build(options.Columns, [new LocaleRow("Ana", "SPS")], locale.Text);
         Assert.StartsWith("Nombre,Ciudad\r\n", csv);
     }
+
+    // Option texts configured as resource keys: every one of them goes through TextLocalizer.
+    private static readonly Dictionary<string, string> Spanish = new(StringComparer.Ordinal)
+    {
+        ["grid.empty"] = "Sin registros",
+        ["nav.home"] = "Inicio",
+        ["action.open"] = "Abrir",
+        ["action.disable"] = "Deshabilitar",
+        ["actions.custom"] = "Operaciones",
+        ["view.mine"] = "Mis clientes",
+    };
+
+    private static GridOptions<LocaleRow> KeyedOptions(bool customActionsHeader = true) =>
+        new GridOptionsBuilder<LocaleRow>()
+            .WithId("loc")
+            .WithEmptyMessage("grid.empty")
+            .WithNavLinks(new GridNavLink("nav.home", "/"))
+            .WithRowKey(r => r.Name)
+            .WithRowActions(a =>
+            {
+                a.Link("action.open", r => $"/people/{r.Name}").Event("disable", "action.disable");
+                if (customActionsHeader)
+                {
+                    a.Header("actions.custom");
+                }
+            })
+            .AddView("view.mine", "sort=name:asc")
+            .AddColumn("name", r => r.Name)
+            .AddColumn("city", r => r.City)
+            .Build();
+
+    private static NetOpenGridLocalizationOptions SpanishTexts() =>
+        new() { TextLocalizer = text => Spanish.GetValueOrDefault(text, text) };
+
+    private static GridExecutionResult<LocaleRow> OneRow() =>
+        new(GridQuery.Empty, new PageResult<LocaleRow>([new LocaleRow("Ana", "SPS")], 1, 1, 10));
+
+    [Fact]
+    public async Task TextLocalizer_TranslatesRowActionLabelsHeaderNavLinksAndViewNames()
+    {
+        var renderer = new GridHtmlRenderer<LocaleRow>(KeyedOptions(), new NetOpenGridAssetOptions(), SpanishTexts());
+
+        var html = await renderer.RenderShellAsync(OneRow());
+
+        Assert.Contains(">Abrir</a>", html);
+        Assert.Contains(">Deshabilitar</button>", html);
+        Assert.Contains(">Operaciones<", html);
+        Assert.Contains(">Inicio</a>", html);
+        Assert.Contains("{\"name\":\"Mis clientes\",\"query\":\"sort=name:asc\"}", html);
+        foreach (var key in new[] { "action.open", "action.disable", "actions.custom", "nav.home", "view.mine" })
+        {
+            Assert.DoesNotContain(key, html);
+        }
+    }
+
+    [Fact]
+    public async Task TextLocalizer_TranslatesTheEmptyMessage_InPlainAndGroupedBodies()
+    {
+        var renderer = new GridHtmlRenderer<LocaleRow>(KeyedOptions(), new NetOpenGridAssetOptions(), SpanishTexts());
+
+        var rows = await renderer.RenderRowsAsync(EmptyResult());
+        var grouped = await renderer.RenderGroupedRowsAsync(new GroupedPageResult<LocaleRow>([], 0, 1, 10));
+
+        Assert.Contains(">Sin registros</td>", rows);
+        Assert.Contains(">Sin registros</td>", grouped);
+        Assert.DoesNotContain("grid.empty", rows + grouped);
+    }
+
+    [Fact]
+    public async Task TextLocalizer_LeavesTheBuiltInActionsHeaderToTheLabelTable()
+    {
+        // No Header(...): the default comes from L("actions.header"), never through TextLocalizer.
+        var locale = new NetOpenGridLocalizationOptions { TextLocalizer = text => "X" + text };
+        var renderer = new GridHtmlRenderer<LocaleRow>(KeyedOptions(customActionsHeader: false), new NetOpenGridAssetOptions(), locale);
+
+        var html = await renderer.RenderShellAsync(OneRow());
+
+        Assert.Contains(">" + locale["actions.header"] + "<", html);
+        Assert.DoesNotContain("X" + locale["actions.header"], html);
+    }
+
+    [Fact]
+    public async Task IdentityTextLocalizer_RendersExactlyWhatNoLocalizerRenders()
+    {
+        var plain = new GridHtmlRenderer<LocaleRow>(KeyedOptions(), new NetOpenGridAssetOptions(), new NetOpenGridLocalizationOptions());
+        var identity = new GridHtmlRenderer<LocaleRow>(
+            KeyedOptions(), new NetOpenGridAssetOptions(), new NetOpenGridLocalizationOptions { TextLocalizer = text => text });
+
+        Assert.Equal(await plain.RenderShellAsync(OneRow()), await identity.RenderShellAsync(OneRow()));
+        Assert.Equal(await plain.RenderRowsAsync(EmptyResult()), await identity.RenderRowsAsync(EmptyResult()));
+    }
 }

@@ -220,6 +220,11 @@ builder.Services.AddNetOpenGrid(
 - .NET 10 / ASP.NET Core. `NetOpenGrid.Persistence.EFCore` targets EF Core 10.
 - Themes are plain Tailwind v4 CSS that you compile and serve from `o.CssPath` as
   `netopengrid-{theme}.css`. Copy `themes/grid.css` from the repository as a starting point.
+- To match your app without replacing the theme: `o.BrandColor = "#0d9488"` (or `.WithBrandColor(...)`
+  per grid) re-accents every embedded theme from one value (`--ng-brand`), and
+  `o.ExtraStylesheets.Add("/css/grid-overrides.css")` (or `.WithStylesheet(...)`) loads your overrides
+  after the theme. `RawCellHtml` cells can rely on `badge` + `badge-success`, `badge-warning`,
+  `badge-danger`, `badge-info`, `badge-neutral` and `badge-brand` in every theme, light and dark.
 - `RawCellHtml` is the only place where trusted HTML is emitted; every other cell value is HTML-encoded.
 
 ## License

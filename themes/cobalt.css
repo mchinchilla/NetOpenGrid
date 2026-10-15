@@ -1,4 +1,6 @@
 @import "tailwindcss";
+/* --ng-brand derivation and the semantic badge set, identical in every theme. */
+@import "./shared/brand-and-badges.css";
 
 @custom-variant dark (&:where(.dark, .dark *));
 
@@ -22,12 +24,18 @@
 @source not "../src/NetOpenGrid.Persistence.EFCore";
 @source not "../src/NetOpenGrid.Persistence.Npgsql";
 @source not "../tests";
+/* The docs name utilities on purpose (a README example saying `bg-teal-100` is NOT available
+   put .bg-teal-100 into every theme): prose must not change the CSS either. */
+@source not "../README.md";
+@source not "../README.en.md";
+@source not "../docs";
 
 @theme {
   /* The accent that gives this theme its name: Tailwind's "blue" scale, bound to the
      `brand-*` tokens the renderer emits (links, focus rings, the active pager button).
-     Swap these eleven values and the whole grid re-accents - nothing else in the renderer
-     references a colour literal. */
+     Swap these ten values and the whole grid re-accents - nothing else in the renderer
+     references a colour literal. A consumer re-accents it at runtime instead with a single
+     `--ng-brand` (BrandColor / WithBrandColor), which wins over these defaults. */
   --color-brand-50: #eff6ff;
   --color-brand-100: #dbeafe;
   --color-brand-200: #bfdbfe;
@@ -62,6 +70,27 @@
   --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
 }
 
+/* The brand scale in @theme is this theme's default. Each step yields to the colour derived
+   from --ng-brand once a consumer sets one (see shared/brand-and-badges.css); unset, the
+   var() falls back to the same hex, so the default look does not change. @layer base
+   outranks the @layer theme copy Tailwind emits from @theme, and keeping the hex in @theme
+   keeps Tailwind's precomputed fallbacks for browsers without color-mix(). */
+@layer base {
+  :root,
+  :host {
+    --color-brand-50: var(--ng-brand-50, #eff6ff);
+    --color-brand-100: var(--ng-brand-100, #dbeafe);
+    --color-brand-200: var(--ng-brand-200, #bfdbfe);
+    --color-brand-300: var(--ng-brand-300, #93c5fd);
+    --color-brand-400: var(--ng-brand-400, #60a5fa);
+    --color-brand-500: var(--ng-brand-500, #3b82f6);
+    --color-brand-600: var(--ng-brand-600, #2563eb);
+    --color-brand-700: var(--ng-brand-700, #1d4ed8);
+    --color-brand-800: var(--ng-brand-800, #1e40af);
+    --color-brand-900: var(--ng-brand-900, #1e3a8a);
+  }
+}
+
 @layer components {
   .input-base {
     @apply w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 shadow-sm transition placeholder:text-neutral-400 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/30 focus:outline-none dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100 dark:placeholder:text-neutral-500;
@@ -89,30 +118,6 @@
 
   .badge {
     @apply inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium;
-  }
-
-  .badge-success {
-    @apply bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300;
-  }
-
-  .badge-muted {
-    @apply bg-neutral-200 text-neutral-600 dark:bg-neutral-700 dark:text-neutral-300;
-  }
-
-  .badge-pending {
-    @apply bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300;
-  }
-
-  .badge-shipped {
-    @apply bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300;
-  }
-
-  .badge-delivered {
-    @apply bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300;
-  }
-
-  .badge-cancelled {
-    @apply bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300;
   }
 }
 
