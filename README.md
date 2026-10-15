@@ -1108,6 +1108,7 @@ dotnet test
 - [x] Virtualización de filas (scroll virtual por bloques)
 - [x] Identidad visual sin tocar el tema: `BrandColor` / `WithBrandColor` (`--ng-brand`), hojas extra (`ExtraStylesheets` / `WithStylesheet`) y badges semánticos en todos los temas (1.2.3)
 - [x] i18n de los textos del grid: mensaje de vacío, acciones por fila, cabecera de acciones, vistas predefinidas y enlaces de navegación pasan por `TextLocalizer` (1.2.3)
+- [x] Panel de agrupamiento sin borde: una banda tenue en reposo y el anillo de marca solo mientras se arrastra una columna (1.2.5)
 
 ### 🧪 Calidad
 

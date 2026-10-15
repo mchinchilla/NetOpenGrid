@@ -1108,6 +1108,7 @@ dotnet test
 - [x] Row virtualization (block-based virtual scroll)
 - [x] Visual identity without touching the theme: `BrandColor` / `WithBrandColor` (`--ng-brand`), extra stylesheets (`ExtraStylesheets` / `WithStylesheet`) and semantic badges in every theme (1.2.3)
 - [x] i18n of grid texts: empty message, row actions, actions header, predefined views and nav links go through `TextLocalizer` (1.2.3)
+- [x] Borderless group panel: a faint band at rest and the brand ring only while a column is dragged over it (1.2.5)
 
 ### 🧪 Quality
 

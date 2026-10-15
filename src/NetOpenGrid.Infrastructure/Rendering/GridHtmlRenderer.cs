@@ -937,8 +937,11 @@ public sealed class GridHtmlRenderer<TItem>
     {
         w.Write("<div data-group-panel role=\"group\" aria-label=\"");
         w.Write(L("group.aria"));
-        w.Write("\" class=\"flex min-h-10 flex-wrap items-center gap-2 rounded-xl border border-dashed border-neutral-300 px-3 py-1.5 text-sm transition-colors dark:border-neutral-700\"");
-        w.Write(" :class=\"groupDropActive ? '!border-brand-500 bg-brand-50/60 dark:!border-brand-400 dark:bg-brand-900/20' : ''\"");
+        // No border at rest: a dashed frame competes with the table card for attention. A faint
+        // band marks the zone, and the brand ring only shows while a header is being dragged over
+        // it, which is the only moment the drop target matters.
+        w.Write("\" class=\"flex min-h-10 flex-wrap items-center gap-2 rounded-lg bg-neutral-100/70 px-3 py-1.5 text-sm transition dark:bg-neutral-800/40\"");
+        w.Write(" :class=\"groupDropActive ? 'ring-2 ring-brand-500/60 bg-brand-50/70 dark:ring-brand-400/60 dark:bg-brand-900/20' : ''\"");
         w.Write(" @dragover.prevent=\"onGroupPanelDragOver($event)\" @dragleave=\"groupDropActive = false\" @drop.prevent=\"onGroupPanelDrop($event)\">");
 
         w.Write("<span x-show=\"groupBy.length === 0\" class=\"text-neutral-400 select-none dark:text-neutral-500\">");
