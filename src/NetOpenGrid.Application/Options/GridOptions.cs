@@ -77,6 +77,12 @@ public sealed class GridOptions<T>
     /// <summary>Browsing context for <see cref="RowLink"/> (e.g. "_top" out of an iframe, "_blank").</summary>
     public string? RowLinkTarget { get; init; }
 
+    /// <summary>
+    /// Whole-row event: clicking the row (outside its controls) raises <c>netgrid:action</c> with
+    /// this name and the row key, like an Event row action. Mutually exclusive with <see cref="RowLink"/>.
+    /// </summary>
+    public string? RowEvent { get; init; }
+
     /// <summary>Links/buttons rendered in a trailing actions column.</summary>
     public IReadOnlyList<GridRowAction<T>> RowActions { get; init; } = [];
 

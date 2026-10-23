@@ -595,6 +595,9 @@ Implemented across all three engines: in-memory (snapshot grouping), JSON (`Json
 - **Clickable row** (`WithRowLink`): a click anywhere on the row navigates. Clicks on the row's own controls
   (checkbox, links, buttons) and text selection are ignored; `Ctrl`/`⌘`+click and middle click open a new tab. From
   the keyboard, `Enter` on a cell without a control opens the link. `target: "_top"` leaves the iframe.
+- **Event row** (`WithRowEvent(name)`): instead of navigating, the click (or `Enter`) raises `netgrid:action` with
+  `{ grid, action: name, key }`, like an `Event` action: the page opens a panel or a dialog without leaving the
+  grid. Needs `WithRowKey`; a row is a link or an event, not both.
 - **Actions** (`WithRowActions`): a trailing column with each row's links and buttons.
   - `Link(label, href, target?)` → a plain `<a href>`.
   - `Event(name, label)` → a button that raises `netgrid:action` with `{ grid, action, key }` on the grid root
@@ -833,6 +836,7 @@ you scroll down, and only the blocks near the viewport stay in the DOM.
 | `.EnableRowSelection(keyFn)` | off | Floating bar + export; `keyFn` must be stable and unique |
 | `.WithRowKey(keyFn)` | — | Row key without turning selection on (used by `Event` actions) |
 | `.WithRowLink(hrefFn, target?)` | — | The whole row is clickable |
+| `.WithRowEvent(name)` | — | Clicking the row raises `netgrid:action` (excludes `WithRowLink`) |
 | `.WithRowActions(a => ...)` | — | Actions column: `.Link(...)`, `.Event(...)`, `.Header(...)` |
 | `.WithNavLinks(...)` | `[]` | Shell navigation |
 
@@ -1109,6 +1113,7 @@ dotnet test
 - [x] Visual identity without touching the theme: `BrandColor` / `WithBrandColor` (`--ng-brand`), extra stylesheets (`ExtraStylesheets` / `WithStylesheet`) and semantic badges in every theme (1.2.3)
 - [x] i18n of grid texts: empty message, row actions, actions header, predefined views and nav links go through `TextLocalizer` (1.2.3)
 - [x] Borderless group panel: a faint band at rest and the brand ring only while a column is dragged over it (1.2.5)
+- [x] Rows that raise an event instead of navigating: `WithRowEvent` (1.2.6)
 
 ### 🧪 Quality
 

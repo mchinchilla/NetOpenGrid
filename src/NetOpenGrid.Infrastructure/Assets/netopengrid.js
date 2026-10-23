@@ -1222,10 +1222,12 @@
               break;
             }
             // A group row toggles from any of its cells (the subtotal cells have no control);
-            // a linked row opens from any cell without a control of its own.
+            // a linked row opens from any cell without a control of its own, and an event row
+            // raises its event.
             const control = controls[0] ?? row.querySelector('[aria-expanded]');
             if (control) control.click();
             else if (row.dataset.href) this.openRowLink(row, event.ctrlKey || event.metaKey);
+            else if (row.dataset.rowEvent) this.rowAction(row.dataset.rowEvent, row.dataset.key);
             else return;
             break;
           }
@@ -1245,10 +1247,16 @@
       // ---- Row link and row actions ----------------------------------------------------------
 
       onRowClick(event) {
-        const row = event.target.closest?.('tr[data-href]');
+        const row = event.target.closest?.('tr[data-href], tr[data-row-event]');
         if (!row || event.defaultPrevented) return;
         if (event.target.closest('a, button, input, select, textarea, label, [data-actions]')) return;
         if (window.getSelection()?.toString()) return;              // selecting text is not a click
+
+        // An event row has no new tab to open: a plain click raises the event, anything else is ignored.
+        if (row.dataset.rowEvent) {
+          if (event.type === 'click' && event.button === 0) this.rowAction(row.dataset.rowEvent, row.dataset.key);
+          return;
+        }
 
         const newTab = event.button === 1 || event.ctrlKey || event.metaKey;
         if (event.button !== 0 && event.button !== 1) return;

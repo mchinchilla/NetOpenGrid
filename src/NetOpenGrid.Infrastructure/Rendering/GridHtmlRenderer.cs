@@ -1360,8 +1360,9 @@ public sealed class GridHtmlRenderer<TItem>
         var rowKey = _options.EnableRowSelection ? _options.RowKey?.Invoke(item) : null;
 
         var rowHref = _options.RowLink is { } rowLink ? GridUrl.Safe(rowLink(item)) : null;
+        var rowEventKey = _options.RowEvent is not null ? _options.RowKey?.Invoke(item) : null;
 
-        w.Write(rowHref is null
+        w.Write(rowHref is null && rowEventKey is null
             ? "<tr class=\"border-b border-neutral-100 transition-colors last:border-0 hover:bg-brand-50/40 dark:border-neutral-800/60 dark:hover:bg-white/[0.04]\""
             : "<tr class=\"cursor-pointer border-b border-neutral-100 transition-colors last:border-0 hover:bg-brand-50/40 dark:border-neutral-800/60 dark:hover:bg-white/[0.04]\"");
 
@@ -1384,6 +1385,15 @@ public sealed class GridHtmlRenderer<TItem>
                 AppendEncoded(w, target);
                 w.Write('"');
             }
+        }
+
+        if (rowEventKey is not null)
+        {
+            w.Write(" data-row-event=\"");
+            AppendEncoded(w, _options.RowEvent!);
+            w.Write("\" data-key=\"");
+            AppendEncoded(w, rowEventKey);
+            w.Write('"');
         }
 
         if (_options.EnableRowSelection && rowKey is not null)

@@ -594,6 +594,9 @@ Implementado en los tres motores: in-memory (agrupación en snapshot), JSON (`Js
 - **Fila clicable** (`WithRowLink`): un clic en cualquier parte de la fila navega. Se ignoran los clics sobre los
   controles de la fila (checkbox, links, botones) y la selección de texto; `Ctrl`/`⌘`+clic y el clic central abren
   una pestaña nueva. Con teclado, `Enter` sobre una celda sin control abre el link. `target: "_top"` sale del iframe.
+- **Fila que avisa** (`WithRowEvent(name)`): en vez de navegar, el clic (o `Enter`) dispara `netgrid:action` con
+  `{ grid, action: name, key }`, igual que una acción `Event`: para que la página abra un panel o un diálogo sin salir
+  del grid. Necesita `WithRowKey`; una fila es un link o un evento, no las dos cosas.
 - **Acciones** (`WithRowActions`): columna al final con los links y botones de cada fila.
   - `Link(label, href, target?)` → un `<a href>` normal.
   - `Event(name, label)` → un botón que dispara `netgrid:action` con `{ grid, action, key }` en la raíz del grid
@@ -833,6 +836,7 @@ bloques mientras bajas, y en el DOM solo quedan los bloques cerca de lo que ves.
 | `.EnableRowSelection(keyFn)` | off | Barra flotante + export; `keyFn` debe ser estable y único |
 | `.WithRowKey(keyFn)` | — | Clave de fila sin activar la selección (la usan las acciones `Event`) |
 | `.WithRowLink(hrefFn, target?)` | — | Toda la fila es clicable |
+| `.WithRowEvent(name)` | — | El clic en la fila dispara `netgrid:action` (excluye `WithRowLink`) |
 | `.WithRowActions(a => ...)` | — | Columna de acciones: `.Link(...)`, `.Event(...)`, `.Header(...)` |
 | `.WithNavLinks(...)` | `[]` | Navegación del shell |
 
@@ -1109,6 +1113,7 @@ dotnet test
 - [x] Identidad visual sin tocar el tema: `BrandColor` / `WithBrandColor` (`--ng-brand`), hojas extra (`ExtraStylesheets` / `WithStylesheet`) y badges semánticos en todos los temas (1.2.3)
 - [x] i18n de los textos del grid: mensaje de vacío, acciones por fila, cabecera de acciones, vistas predefinidas y enlaces de navegación pasan por `TextLocalizer` (1.2.3)
 - [x] Panel de agrupamiento sin borde: una banda tenue en reposo y el anillo de marca solo mientras se arrastra una columna (1.2.5)
+- [x] Fila que dispara un evento en vez de navegar: `WithRowEvent` (1.2.6)
 
 ### 🧪 Calidad
 

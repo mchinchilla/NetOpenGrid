@@ -39,6 +39,7 @@ public sealed class JsonGridOptionsBuilder
     private Func<JsonElement, string?>? _rowKey;
     private Func<JsonElement, string?>? _rowLink;
     private string? _rowLinkTarget;
+    private string? _rowEvent;
     private IReadOnlyList<GridRowAction<JsonElement>> _rowActions = [];
     private string? _rowActionsHeader;
     private bool _rowActionsPinned;
@@ -129,6 +130,18 @@ public sealed class JsonGridOptionsBuilder
         return this;
     }
 
+    /// <summary>
+    /// Makes the whole row raise <c>netgrid:action</c> with <paramref name="name"/> and the row key
+    /// when clicked (or on Enter), for the host page to open a panel or a dialog. Needs a row key;
+    /// a row is a link or an event, not both.
+    /// </summary>
+    public JsonGridOptionsBuilder WithRowEvent(string name)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
+        _rowEvent = name;
+        return this;
+    }
+
     /// <summary>Trailing column of per-row links and event buttons.</summary>
     public JsonGridOptionsBuilder WithRowActions(Action<GridRowActionsBuilder<JsonElement>> configure)
     {
@@ -186,6 +199,17 @@ public sealed class JsonGridOptionsBuilder
                 "Row actions of kind Event need a row key: call WithRowKey(...) or EnableRowSelection(...).");
         }
 
+        if (_rowEvent is not null && _rowKey is null)
+        {
+            throw new GridConfigurationException(
+                "A row event needs a row key: call WithRowKey(...) or EnableRowSelection(...).");
+        }
+
+        if (_rowEvent is not null && _rowLink is not null)
+        {
+            throw new GridConfigurationException("A row is either a link or an event: use WithRowLink(...) or WithRowEvent(...), not both.");
+        }
+
         if (_pageSizeChoices.Length == 0 || _pageSizeChoices.Any(static c => c is < 1))
         {
             throw new GridConfigurationException("Invalid page size choices.");
@@ -221,6 +245,7 @@ public sealed class JsonGridOptionsBuilder
             RowKey = _rowKey,
             RowLink = _rowLink,
             RowLinkTarget = _rowLinkTarget,
+            RowEvent = _rowEvent,
             RowActions = _rowActions,
             RowActionsHeader = _rowActionsHeader,
             RowActionsPinned = _rowActionsPinned,

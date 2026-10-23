@@ -4,8 +4,10 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using NetOpenGrid.Application.Builders;
 using NetOpenGrid.Application.DataSources;
 using NetOpenGrid.Application.Options;
+using NetOpenGrid.Domain;
 using NetOpenGrid.Domain.Columns;
 using NetOpenGrid.Infrastructure;
 using NetOpenGrid.Infrastructure.Endpoints;
@@ -106,6 +108,52 @@ public class RowActionsRenderingTests
         Assert.Contains("'netgrid:refresh'", js);
     }
 
+    [Fact]
+    public async Task Event_Rows_Carry_The_Event_And_The_Key_Instead_Of_A_Link()
+    {
+        using var host = await BuildHostAsync();
+        var rows = Rows(await host.GetTestClient().GetStringAsync("/netgrid/events/rows?sort=id"));
+        var row = Regex.Match(rows[0], "<tr[^>]*>").Value;
+
+        Assert.Contains("class=\"cursor-pointer ", row);
+        Assert.Contains("data-row-event=\"details\" data-key=\"a&amp;1\"", row);
+        Assert.DoesNotContain("data-href", row);
+    }
+
+    [Fact]
+    public async Task Row_Clicks_Raise_The_Row_Event()
+    {
+        using var host = await BuildHostAsync();
+        var js = await host.GetTestClient().GetStringAsync("/_netgrid/netopengrid.js");
+
+        Assert.Contains("tr[data-href], tr[data-row-event]", js);
+        Assert.Contains("this.rowAction(row.dataset.rowEvent, row.dataset.key)", js);
+    }
+
+    [Fact]
+    public void A_Row_Event_Needs_A_Row_Key()
+    {
+        var error = Assert.Throws<GridConfigurationException>(() => new GridOptionsBuilder<Item>().WithId("x")
+            .AddColumn("id", i => i.Id)
+            .WithRowEvent("details")
+            .Build());
+
+        Assert.Contains("WithRowKey", error.Message);
+    }
+
+    [Fact]
+    public void A_Row_Is_A_Link_Or_An_Event_Not_Both()
+    {
+        var error = Assert.Throws<GridConfigurationException>(() => new GridOptionsBuilder<Item>().WithId("x")
+            .AddColumn("id", i => i.Id)
+            .WithRowKey(i => i.Id)
+            .WithRowLink(i => i.Link)
+            .WithRowEvent("details")
+            .Build());
+
+        Assert.Contains("WithRowEvent", error.Message);
+    }
+
     private static string[] Rows(string html) =>
         Regex.Matches(html, "<tr.*?</tr>", RegexOptions.Singleline).Select(m => m.Value).ToArray();
 
@@ -129,6 +177,12 @@ public class RowActionsRenderingTests
                             .WithRowActions(a => a
                                 .Link("Open", i => i.Link, target: "_blank")
                                 .Event("archive", "Archive", RowActionStyle.Danger, visible: i => i.Active)),
+                            (_, opts) => new InMemoryGridDataSource<Item>(opts, Items))
+                        .AddGrid<Item>("events", options => options
+                            .AddColumn("id", i => i.Id)
+                            .AddColumn("name", i => i.Name)
+                            .WithRowKey(i => i.Id)
+                            .WithRowEvent("details"),
                             (_, opts) => new InMemoryGridDataSource<Item>(opts, Items));
                 });
 
