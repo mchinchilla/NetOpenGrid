@@ -1,0 +1,133 @@
+/* Expandable row detail (WithRowDetail), shared by every theme like brand-and-badges.css.
+
+   1. Grid chrome. The expander cell and button are rendered once per row, so they are one short
+   class each instead of a long utility list: a page of 100 rows carries a few bytes per row,
+   not a repeated SVG and twenty utilities. The chevron is a CSS border, rotated through
+   aria-expanded, which is the only thing netopengrid.js touches when a row toggles. */
+@layer components {
+  .ng-detail-cell {
+    @apply sticky z-10 w-10 border-r border-neutral-100 bg-white px-2 py-2 text-center align-middle dark:border-neutral-800/60 dark:bg-neutral-900;
+  }
+
+  .ng-detail-toggle {
+    @apply inline-flex h-6 w-6 cursor-pointer items-center justify-center rounded-md border border-neutral-200 text-neutral-500 transition hover:border-brand-300 hover:text-brand-600 dark:border-neutral-700 dark:text-neutral-400 dark:hover:border-brand-700 dark:hover:text-brand-400;
+  }
+
+  .ng-detail-toggle::before {
+    content: "";
+    @apply h-1.5 w-1.5 -translate-x-px rotate-45 border-t-[1.5px] border-r-[1.5px] border-current transition-transform;
+  }
+
+  .ng-detail-toggle[aria-expanded="true"] {
+    @apply border-brand-500 text-brand-600 dark:border-brand-500 dark:text-brand-400;
+  }
+
+  .ng-detail-toggle[aria-expanded="true"]::before {
+    @apply translate-x-0 -translate-y-px rotate-135;
+  }
+
+  .ng-detail-row > td {
+    @apply border-b border-neutral-100 bg-neutral-50/70 p-0 dark:border-neutral-800/60 dark:bg-neutral-950/30;
+  }
+
+  /* Stays in view while a wide table scrolls sideways; netopengrid.js sets its width to the card's. */
+  .ng-detail-panel {
+    @apply sticky left-0 px-4 py-4 text-sm;
+  }
+
+  .ng-detail-status {
+    @apply flex items-center gap-3 text-sm text-neutral-500 dark:text-neutral-400;
+  }
+
+  .ng-detail-status button {
+    @apply cursor-pointer font-medium text-brand-600 hover:underline dark:text-brand-400;
+  }
+
+  /* 2. Building blocks for the host's detail fragment. As with the badges, a consumer's HTML
+     cannot rely on arbitrary Tailwind utilities (only the ones the renderer emits are compiled),
+     so these classes are the contract:
+
+       <div class="ng-detail">
+         <section class="ng-detail-card">
+           <h3 class="ng-detail-title">Routing</h3>
+           <dl class="ng-detail-fields"><dt>Route</dt><dd>+50422807778</dd></dl>
+         </section>
+         <section class="ng-detail-card ng-detail-wide">
+           <h3 class="ng-detail-title">Legs (5)</h3>
+           <table class="ng-detail-table">...<td class="ng-num">0:06</td>...</table>
+         </section>
+       </div> */
+  /* Cards share a line and wrap below 22rem each; a wide card takes a line of its own. */
+  .ng-detail {
+    @apply flex flex-wrap gap-4;
+  }
+
+  .ng-detail-card {
+    flex: 1 1 min(100%, 22rem);
+    @apply min-w-0 overflow-x-auto rounded-xl border border-neutral-200 bg-white p-4 [color-scheme:light] dark:border-neutral-800 dark:bg-neutral-900 dark:[color-scheme:dark];
+  }
+
+  .ng-detail-wide {
+    flex-basis: 100%;
+  }
+
+  .ng-detail-title {
+    @apply mb-3 text-xs font-semibold tracking-wide text-neutral-500 uppercase dark:text-neutral-400;
+  }
+
+  .ng-detail-fields {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    @apply gap-x-6 gap-y-1;
+  }
+
+  .ng-detail-fields dt {
+    @apply text-neutral-500 dark:text-neutral-400;
+  }
+
+  .ng-detail-fields dd {
+    @apply truncate text-right font-mono text-neutral-800 tabular-nums dark:text-neutral-100;
+  }
+
+  .ng-detail-table {
+    @apply w-full text-sm;
+  }
+
+  .ng-detail-table th {
+    @apply pb-1.5 text-left text-xs font-medium whitespace-nowrap text-neutral-500 dark:text-neutral-400;
+  }
+
+  .ng-detail-table td {
+    @apply border-t border-neutral-100 py-1.5 pr-4 whitespace-nowrap text-neutral-800 dark:border-neutral-800 dark:text-neutral-100;
+  }
+
+  .ng-detail-table th:last-child,
+  .ng-detail-table td:last-child {
+    @apply pr-0;
+  }
+
+  .ng-detail-table th.ng-num,
+  .ng-detail-table td.ng-num,
+  .ng-num {
+    @apply text-right tabular-nums;
+  }
+
+  .ng-mono {
+    @apply font-mono;
+  }
+}
+
+/* 3. Unlayered on purpose: the grid's own table utilities reach every descendant thead/td (a
+   sticky, opaque header under virtual scroll; clipped, ellipsed cells once a column is resized),
+   and utilities outrank anything in the components layer. A table inside a detail is the host's
+   content, so it gets plain cells back. */
+.ng-detail-row thead th {
+  position: static;
+  z-index: auto;
+  background: none;
+}
+
+.ng-detail-row td td {
+  overflow: visible;
+  text-overflow: clip;
+}

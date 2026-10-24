@@ -1,6 +1,8 @@
 @import "tailwindcss";
 /* --ng-brand derivation and the semantic badge set, identical in every theme. */
 @import "./shared/brand-and-badges.css";
+/* Expandable row detail: expander chrome plus the building blocks for detail fragments. */
+@import "./shared/row-detail.css";
 
 @custom-variant dark (&:where(.dark, .dark *));
 

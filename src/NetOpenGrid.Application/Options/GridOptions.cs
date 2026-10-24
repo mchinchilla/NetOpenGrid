@@ -83,6 +83,12 @@ public sealed class GridOptions<T>
     /// </summary>
     public string? RowEvent { get; init; }
 
+    /// <summary>
+    /// Expandable row detail: URL of an HTML fragment fetched only when the row is expanded (and
+    /// cached on the client). Rows for which it returns null get no expander.
+    /// </summary>
+    public Func<T, string?>? RowDetail { get; init; }
+
     /// <summary>Links/buttons rendered in a trailing actions column.</summary>
     public IReadOnlyList<GridRowAction<T>> RowActions { get; init; } = [];
 
@@ -93,6 +99,7 @@ public sealed class GridOptions<T>
     public string? RowActionsHeader { get; init; }
 
     public bool HasRowActions => RowActions.Count > 0;
+    public bool HasRowDetail => RowDetail is not null;
     public IReadOnlyList<GridNavLink> NavLinks { get; init; } = [];
 
     private Dictionary<string, GridColumn<T>>? _columnIndex;

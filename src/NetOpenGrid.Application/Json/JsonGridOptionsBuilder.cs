@@ -40,6 +40,7 @@ public sealed class JsonGridOptionsBuilder
     private Func<JsonElement, string?>? _rowLink;
     private string? _rowLinkTarget;
     private string? _rowEvent;
+    private Func<JsonElement, string?>? _rowDetail;
     private IReadOnlyList<GridRowAction<JsonElement>> _rowActions = [];
     private string? _rowActionsHeader;
     private bool _rowActionsPinned;
@@ -139,6 +140,19 @@ public sealed class JsonGridOptionsBuilder
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
         _rowEvent = name;
+        return this;
+    }
+
+    /// <summary>
+    /// Adds a leading expander column: expanding a row fetches the HTML fragment at
+    /// <paramref name="url"/> and shows it in a full-width row underneath. Nothing is rendered or
+    /// requested until a row is expanded, and each fragment is fetched once and cached on the
+    /// client. Rows for which <paramref name="url"/> returns null (or an unsafe URL) get no expander.
+    /// </summary>
+    public JsonGridOptionsBuilder WithRowDetail(Func<JsonElement, string?> url)
+    {
+        ArgumentNullException.ThrowIfNull(url);
+        _rowDetail = url;
         return this;
     }
 
@@ -246,6 +260,7 @@ public sealed class JsonGridOptionsBuilder
             RowLink = _rowLink,
             RowLinkTarget = _rowLinkTarget,
             RowEvent = _rowEvent,
+            RowDetail = _rowDetail,
             RowActions = _rowActions,
             RowActionsHeader = _rowActionsHeader,
             RowActionsPinned = _rowActionsPinned,

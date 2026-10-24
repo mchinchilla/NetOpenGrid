@@ -297,7 +297,7 @@ public sealed class GridHtmlRenderer<TItem>
         Action? label)
     {
         var span = label is null ? 0 : LeadingLabelSpan(columns);
-        var selection = _options.EnableRowSelection ? 1 : 0;
+        var leading = LeadingControlColumns;
 
         if (span > 0)
         {
@@ -309,12 +309,15 @@ public sealed class GridHtmlRenderer<TItem>
             label!();
             w.Write("</td>");
         }
-        else if (selection > 0)
+        else
         {
-            w.Write("<td></td>");
+            for (var i = 0; i < leading; i++)
+            {
+                w.Write("<td></td>");
+            }
         }
 
-        var skip = Math.Max(span - selection, 0);
+        var skip = Math.Max(span - leading, 0);
         for (var i = skip; i < columns.Count; i++)
         {
             var column = columns[i];
@@ -377,7 +380,11 @@ public sealed class GridHtmlRenderer<TItem>
         _ => "max"
     };
 
-    /// <summary>Selection column + leading non-aggregated columns: where a row label can go.</summary>
+    /// <summary>Expander + selection columns: the control cells before the first data column.</summary>
+    private int LeadingControlColumns =>
+        (_options.HasRowDetail ? 1 : 0) + (_options.EnableRowSelection ? 1 : 0);
+
+    /// <summary>Expander/selection columns + leading non-aggregated columns: where a row label can go.</summary>
     private int LeadingLabelSpan(IReadOnlyList<GridColumn<TItem>> columns)
     {
         var leading = 0;
@@ -386,12 +393,12 @@ public sealed class GridHtmlRenderer<TItem>
             leading++;
         }
 
-        return leading + (_options.EnableRowSelection ? 1 : 0);
+        return leading + LeadingControlColumns;
     }
 
-    /// <summary>Every rendered column: selection + data columns + the trailing actions column.</summary>
+    /// <summary>Every rendered column: expander + selection + data columns + the trailing actions column.</summary>
     private int ColumnSpan(IReadOnlyList<GridColumn<TItem>> columns) =>
-        columns.Count + (_options.EnableRowSelection ? 1 : 0) + (_options.HasRowActions ? 1 : 0);
+        columns.Count + LeadingControlColumns + (_options.HasRowActions ? 1 : 0);
 
     private void AppendEmptyRow(TextWriter w, IReadOnlyList<GridColumn<TItem>> columns)
     {
@@ -1003,6 +1010,13 @@ public sealed class GridHtmlRenderer<TItem>
     {
         w.Write("<thead class=\"bg-neutral-50 dark:bg-neutral-800/60\" @keydown=\"onHeadKeydown($event)\"><tr>");
 
+        if (_options.HasRowDetail)
+        {
+            w.Write("<th scope=\"col\" data-pin=\"__detail\" style=\"left:0\" class=\"sticky z-30 w-10 border-r border-neutral-200 bg-neutral-50 px-2 py-3 dark:border-neutral-800 dark:bg-[color:color-mix(in_oklab,var(--color-neutral-800)_60%,var(--color-neutral-900))]\"><span class=\"sr-only\">");
+            AppendEncoded(w, L("detail.header"));
+            w.Write("</span></th>");
+        }
+
         if (_options.EnableRowSelection && _options.RowKey is not null)
         {
             // Pinned header cells need an opaque background: the thead's translucent one lets the
@@ -1361,8 +1375,9 @@ public sealed class GridHtmlRenderer<TItem>
 
         var rowHref = _options.RowLink is { } rowLink ? GridUrl.Safe(rowLink(item)) : null;
         var rowEventKey = _options.RowEvent is not null ? _options.RowKey?.Invoke(item) : null;
+        var detailUrl = _options.RowDetail is { } rowDetail ? GridUrl.Safe(rowDetail(item)) : null;
 
-        w.Write(rowHref is null && rowEventKey is null
+        w.Write(rowHref is null && rowEventKey is null && detailUrl is null
             ? "<tr class=\"border-b border-neutral-100 transition-colors last:border-0 hover:bg-brand-50/40 dark:border-neutral-800/60 dark:hover:bg-white/[0.04]\""
             : "<tr class=\"cursor-pointer border-b border-neutral-100 transition-colors last:border-0 hover:bg-brand-50/40 dark:border-neutral-800/60 dark:hover:bg-white/[0.04]\"");
 
@@ -1403,7 +1418,30 @@ public sealed class GridHtmlRenderer<TItem>
             w.Write('"');
         }
 
+        // Only the URL travels with the row: the fragment is fetched when the row is expanded.
+        if (detailUrl is not null)
+        {
+            w.Write(" data-detail=\"");
+            AppendEncoded(w, detailUrl);
+            w.Write('"');
+        }
+
         w.Write('>');
+
+        if (_options.HasRowDetail)
+        {
+            // One short class per cell (themes/shared/row-detail.css): this markup repeats on every
+            // row, so it stays small; netopengrid.js only flips aria-expanded.
+            w.Write("<td data-pin=\"__detail\" style=\"left:0\" class=\"ng-detail-cell\">");
+            if (detailUrl is not null)
+            {
+                w.Write("<button type=\"button\" class=\"ng-detail-toggle\" data-detail-toggle aria-expanded=\"false\" aria-label=\"");
+                AppendEncoded(w, L("detail.toggle.aria"));
+                w.Write("\"></button>");
+            }
+
+            w.Write("</td>");
+        }
 
         if (_options.EnableRowSelection && rowKey is not null)
         {

@@ -135,7 +135,10 @@ builder.Services.AddNetOpenGrid(
             .ExcelFormat("\"$\"#,##0.00")
             .Aggregate(GridAggregate.Sum | GridAggregate.Avg))
         .AddColumn(o => o.PlacedOn, c => c
-            .Format(d => d.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture))),
+            .Format(d => d.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)))
+        // Expandable detail: only the URL goes out with each row; the fragment (GET /orders/{id}/detail
+        // below) is fetched when a row is expanded and cached by the browser-side runtime.
+        .WithRowDetail(o => $"/orders/{o.Id}/detail"),
         // sp is the root provider; the data source opens a scope per request, so the scoped DbContext is safe.
         (sp, opts) => new EFCoreGridDataSource<Order>(
             opts,
@@ -180,6 +183,61 @@ app.MapPost("/netgrid/{gridId}/export", (string gridId, HttpRequest request) =>
 
     var rows = ProductData.All.Where(p => skus.Contains(p.Sku));
     return Results.File(Encoding.UTF8.GetBytes(ProductData.ToCsv(rows)), "text/csv", "products-selected.csv");
+});
+
+// Row detail fragment for the orders grid: plain HTML built with the themes' ng-detail-* classes
+// (cards, key/value fields, compact tables) and badges. Called only when a row is expanded.
+app.MapGet("/orders/{id:int}/detail", async (int id, ShopDb db) =>
+{
+    var order = await db.Orders.AsNoTracking().FirstOrDefaultAsync(o => o.Id == id);
+    if (order is null)
+    {
+        return Results.NotFound();
+    }
+
+    string E(string value) => WebUtility.HtmlEncode(value);
+
+    // Demo lines picked deterministically from the order id; a real app would query its own tables.
+    var random = new Random(order.Id);
+    var products = ProductData.All;
+    var lines = Enumerable.Range(0, order.Items)
+        .Select(_ => products[random.Next(products.Count)])
+        .GroupBy(p => p.Sku)
+        .Select(g => (Product: g.First(), Quantity: g.Count()))
+        .ToList();
+    var subtotal = lines.Sum(l => l.Product.Price * l.Quantity);
+
+    var html = new StringBuilder();
+    html.Append("<div class=\"ng-detail\">");
+
+    html.Append("<section class=\"ng-detail-card\"><h3 class=\"ng-detail-title\">Shipping</h3><dl class=\"ng-detail-fields\">");
+    html.Append($"<dt>Customer</dt><dd>{E(order.Customer)}</dd>");
+    html.Append($"<dt>City</dt><dd>{E(order.City)}, {E(order.Country)}</dd>");
+    html.Append($"<dt>Placed on</dt><dd>{order.PlacedOn:yyyy-MM-dd}</dd>");
+    html.Append($"<dt>Status</dt><dd><span class=\"badge badge-{E(order.Status)}\">{E(order.Status)}</span></dd>");
+    html.Append($"<dt>Order</dt><dd>{E(order.Number)}</dd>");
+    html.Append("</dl></section>");
+
+    html.Append($"<section class=\"ng-detail-card\"><h3 class=\"ng-detail-title\">Lines ({lines.Count})</h3><table class=\"ng-detail-table\">");
+    html.Append("<thead><tr><th>SKU</th><th>Product</th><th>Category</th><th class=\"ng-num\">Qty</th><th class=\"ng-num\">Price</th><th class=\"ng-num\">Amount</th></tr></thead><tbody>");
+    foreach (var (product, quantity) in lines)
+    {
+        html.Append($"<tr><td class=\"ng-mono\">{E(product.Sku)}</td><td>{E(product.Name)}</td>");
+        html.Append($"<td><span class=\"badge badge-neutral\">{E(product.Category.ToString())}</span></td>");
+        html.Append($"<td class=\"ng-num\">{quantity}</td><td class=\"ng-num\">{product.Price.ToString("C2", usd)}</td>");
+        html.Append($"<td class=\"ng-num\">{(product.Price * quantity).ToString("C2", usd)}</td></tr>");
+    }
+
+    html.Append("</tbody></table></section>");
+
+    html.Append("<section class=\"ng-detail-card ng-detail-wide\"><h3 class=\"ng-detail-title\">Billing</h3><table class=\"ng-detail-table\">");
+    html.Append("<thead><tr><th>Line</th><th>State</th><th class=\"ng-num\">Amount</th></tr></thead><tbody>");
+    html.Append($"<tr><td><span class=\"badge badge-info\">Products</span></td><td><span class=\"badge badge-success\">Rated</span></td><td class=\"ng-num\">{subtotal.ToString("C2", usd)}</td></tr>");
+    html.Append($"<tr><td><span class=\"badge badge-neutral\">Order total</span></td><td><span class=\"badge {(order.Status == "cancelled" ? "badge-danger\">Voided" : "badge-success\">Charged")}</span></td><td class=\"ng-num\">{order.Total.ToString("C2", usd)}</td></tr>");
+    html.Append("</tbody></table></section>");
+
+    html.Append("</div>");
+    return Results.Content(html.ToString(), "text/html; charset=utf-8");
 });
 
 app.Run();

@@ -100,6 +100,7 @@ flowchart LR
 | 🎨 **Temas** | Tailwind v4 | Presets `grid`/`midnight`, dark mode persistido, escaneo de clases en C# |
 | 🔌 **Self-contained** | Assets embebidos | JS + HTMX + Alpine dentro del ensamblado, servidos con `?v={sha}` inmutable |
 | 🖱️ **Filas** | Clicables + acciones | `WithRowLink` y `WithRowActions` (links y eventos `netgrid:action` para tu página) |
+| | Detalle expandible | `WithRowDetail`: el fragmento HTML se pide solo al expandir, una vez, y queda en caché |
 | 🔖 **Vistas** | Predefinidas + del usuario | `AddView(...)` en el servidor; cada usuario guarda las suyas en su navegador |
 | 🔗 **Deep links** | Estado en URL | `page·pageSize·sort·filter·q·groupby·expand·cols·hide` — comparte la vista exacta |
 | ♿ **A11y** | aria-labels localizados | Roles, `aria-sort`, `aria-expanded`, focus rings, `x-cloak` |
@@ -618,6 +619,74 @@ window.addEventListener("message", (e) => {
 });
 ```
 
+### Detalle expandible por fila
+
+Un botón al inicio de cada fila despliega debajo una fila a todo el ancho con el detalle que tú renderizas
+(tramos de una llamada, líneas de un pedido, historial…):
+
+```csharp
+.WithRowDetail(o => $"/orders/{o.Id}/detail")   // null = esa fila no tiene detalle
+```
+
+```csharp
+// Tu endpoint devuelve un fragmento HTML (o un partial de Razor)
+app.MapGet("/orders/{id:int}/detail", async (int id, ShopDb db) => Results.Content(
+    await OrderDetailHtml(db, id), "text/html; charset=utf-8"));
+```
+
+Pensado para el rendimiento:
+
+- **Nada por adelantado.** Con cada fila solo viaja la URL y un botón de unos pocos bytes (el chevron es CSS,
+  no un SVG por fila); el detalle no se consulta ni se renderiza hasta que alguien expande la fila.
+- **Una petición por detalle.** El fragmento se pide al primer clic y queda en una caché LRU del cliente
+  (50 fragmentos por grid): colapsar y volver a expandir no vuelve al servidor. Colapsar mientras carga cancela
+  la petición (`AbortController`).
+- **Sobrevive a los re-renders.** Las filas abiertas siguen abiertas al ordenar, filtrar, refrescar o al volver
+  un bloque del scroll virtual, y se reinsertan desde la caché sin parpadeo. En modo paginado, las filas que
+  salen de la página se olvidan.
+- **Sin coste en Alpine.** El botón no lleva directivas: un único listener delegado en el `<tbody>` atiende todas
+  las filas, y el runtime solo cambia `aria-expanded`.
+- `netgrid:refresh` vacía la caché (los datos cambiaron) y vuelve a pedir los detalles abiertos.
+
+Comportamiento:
+
+- Clic en el botón, o en cualquier parte de una fila sin `WithRowLink`/`WithRowEvent`. Con teclado, `Enter`
+  sobre la fila (si no tiene link ni evento) o `Espacio` (si no tiene selección).
+- La columna del botón queda fijada a la izquierda y el panel del detalle se ajusta al ancho visible de la
+  tarjeta, así se ve completo aunque la tabla tenga scroll horizontal.
+- La petición lleva el header `X-NetGrid-Detail: true` (útil para devolver un partial sin layout). Si falla,
+  la fila muestra un mensaje con "Reintentar". Los atributos `hx-*` del fragmento funcionan.
+- El fragmento es HTML de confianza, como `RawCellHtml`: escapa lo que venga del usuario.
+- Textos localizados: `detail.header`, `detail.toggle.aria`, `detail.loading`, `detail.error`, `detail.retry`.
+
+Como el tema solo compila las clases que emite el renderer, los temas traen **bloques para armar el detalle**
+(funcionan en claro y oscuro, junto con los badges):
+
+| Clase | Para qué |
+|---|---|
+| `ng-detail` | Contenedor: tarjetas en columnas que se acomodan solas al ancho |
+| `ng-detail-card` · `ng-detail-wide` | Tarjeta; `wide` ocupa todo el ancho |
+| `ng-detail-title` | Título de la tarjeta (mayúsculas, pequeño) |
+| `ng-detail-fields` | `<dl>` de clave → valor (valor a la derecha, monoespaciado) |
+| `ng-detail-table` | Tabla compacta |
+| `ng-num` · `ng-mono` | Celda numérica alineada a la derecha · texto monoespaciado |
+
+```html
+<div class="ng-detail">
+  <section class="ng-detail-card">
+    <h3 class="ng-detail-title">Routing</h3>
+    <dl class="ng-detail-fields"><dt>Route</dt><dd>+50422807778</dd><dt>PDD</dt><dd>20 ms</dd></dl>
+  </section>
+  <section class="ng-detail-card">
+    <h3 class="ng-detail-title">Legs (2)</h3>
+    <table class="ng-detail-table">
+      <thead><tr><th>Role</th><th>From → To</th><th class="ng-num">Bill</th></tr></thead>
+      <tbody><tr><td><span class="badge badge-neutral">Customer</span></td><td class="ng-mono">50496160262 → 1100</td><td class="ng-num">0:06</td></tr></tbody>
+    </table>
+  </section>
+</div>
+```
+
 ---
 
 ## 📤 Export server-side (CSV y Excel)
@@ -749,7 +818,7 @@ filas salen del orden de Tab y se activan desde la celda.
 | `Ctrl+Home` / `Ctrl+End` | Primera / última celda de la página |
 | `PageUp` / `PageDown` | Página anterior / siguiente, conservando la columna |
 | `Alt+←` / `Alt+→` en un encabezado | Angosta / ensancha la columna 16 px |
-| `Enter` | Activa el control de la celda (link, checkbox); en una fila de grupo, lo expande o colapsa; en una fila clicable, abre su link; con varios controles, entra en la celda |
+| `Enter` | Activa el control de la celda (link, checkbox); en una fila de grupo, lo expande o colapsa; en una fila clicable, abre su link; en una fila con detalle, lo despliega o lo oculta; con varios controles, entra en la celda |
 | `Espacio` | Selecciona la fila; en una fila de grupo, lo expande o colapsa |
 | `↑` en la primera fila | Sube al botón de orden de esa columna; `Enter` ordena, `Shift+Enter` suma al multi-sort |
 | `↓` en un encabezado | Baja a la primera fila, en la misma columna |
@@ -837,6 +906,7 @@ bloques mientras bajas, y en el DOM solo quedan los bloques cerca de lo que ves.
 | `.WithRowKey(keyFn)` | — | Clave de fila sin activar la selección (la usan las acciones `Event`) |
 | `.WithRowLink(hrefFn, target?)` | — | Toda la fila es clicable |
 | `.WithRowEvent(name)` | — | El clic en la fila dispara `netgrid:action` (excluye `WithRowLink`) |
+| `.WithRowDetail(urlFn)` | — | Detalle expandible por fila, cargado bajo demanda desde `urlFn(fila)` |
 | `.WithRowActions(a => ...)` | — | Columna de acciones: `.Link(...)`, `.Event(...)`, `.Header(...)` |
 | `.WithNavLinks(...)` | `[]` | Navegación del shell |
 
@@ -1114,6 +1184,7 @@ dotnet test
 - [x] i18n de los textos del grid: mensaje de vacío, acciones por fila, cabecera de acciones, vistas predefinidas y enlaces de navegación pasan por `TextLocalizer` (1.2.3)
 - [x] Panel de agrupamiento sin borde: una banda tenue en reposo y el anillo de marca solo mientras se arrastra una columna (1.2.5)
 - [x] Fila que dispara un evento en vez de navegar: `WithRowEvent` (1.2.6)
+- [x] Detalle expandible por fila, cargado bajo demanda y en caché: `WithRowDetail` + bloques `ng-detail-*` en los temas (1.2.7)
 
 ### 🧪 Calidad
 

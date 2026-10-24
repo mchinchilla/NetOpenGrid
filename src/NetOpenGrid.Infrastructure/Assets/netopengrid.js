@@ -46,7 +46,10 @@
     'ops.lt': 'less than',
     'ops.lte': 'less or equal',
     'ops.is-empty': 'is empty',
-    'ops.is-not-empty': 'is not empty'
+    'ops.is-not-empty': 'is not empty',
+    'detail.loading': 'Loading...',
+    'detail.error': 'Could not load the detail.',
+    'detail.retry': 'Retry'
   };
 
   const L = (key, vars) => {
@@ -134,6 +137,26 @@
   // blocks do not need, and should not pay for, reactivity).
   const virtualStore = new Map();
 
+  // Row detail bookkeeping per grid, outside Alpine for the same reason: which rows are open (by
+  // detail URL, so they stay open across a sort, a refresh or a virtual block coming back), the
+  // fragments already fetched (a small LRU, so expanding again costs no request) and the fetches
+  // in flight (one per URL, aborted when the row collapses).
+  const DETAIL_CACHE = 50;
+  const detailStore = new Map();
+  const detailState = (id) => {
+    let ds = detailStore.get(id);
+    if (!ds) {
+      ds = { open: new Set(), cache: new Map(), inflight: new Map() };
+      detailStore.set(id, ds);
+    }
+    return ds;
+  };
+  const cacheDetail = (ds, url, html) => {
+    ds.cache.delete(url);
+    ds.cache.set(url, html);
+    if (ds.cache.size > DETAIL_CACHE) ds.cache.delete(ds.cache.keys().next().value);
+  };
+
   // requestAnimationFrame never fires in a hidden tab (a grid opened in the background, a test
   // runner): run on the next frame or after 50 ms, whichever comes first, and only once.
   const nextFrame = (fn) => {
@@ -187,6 +210,7 @@
       htmx.swap(body, html, { swapStyle: 'innerHTML' });
       state.applyRowsMeta(response.headers);
       if (state.isVirtual?.()) state.virtualReset(body);
+      else state.restoreDetails(true);
       state.syncRoving(refocus);
     } catch (error) {
       if (error?.name !== 'AbortError') console.error('[netgrid] row fetch failed:', error);
@@ -349,7 +373,12 @@
           this.groupDropActive = false;
         });
 
-        const refreshIfMine = (grid) => { if (!grid || grid === this.id) this.refresh(); };
+        // An explicit refresh means the data changed: cached details are dropped (open ones refetch).
+        const refreshIfMine = (grid) => {
+          if (grid && grid !== this.id) return;
+          detailStore.get(this.id)?.cache.clear();
+          this.refresh();
+        };
         document.addEventListener('netgrid:refresh', (e) => refreshIfMine(e.detail?.grid));
         window.addEventListener('message', (e) => {
           if (e.origin === window.location.origin && e.data?.type === 'netgrid:refresh') refreshIfMine(e.data.grid);
@@ -690,6 +719,10 @@
             right += cell.offsetWidth;
           }
         });
+
+        // Every path that changes the table's width (window resize, column resize, a new set of
+        // rows) ends here, so open detail rows are re-fitted here too.
+        this.sizeDetailRows();
       },
 
       // ---- Column resizing --------------------------------------------------------------------
@@ -1055,7 +1088,8 @@
       // up/down through a group header keeps the column the user was on.
 
       bodyRows() {
-        return Array.from(document.getElementById(`${this.id}-body`)?.rows ?? []).filter((row) => !row.hasAttribute('data-spacer'));
+        return Array.from(document.getElementById(`${this.id}-body`)?.rows ?? [])
+          .filter((row) => !row.hasAttribute('data-spacer') && !row.hasAttribute('data-detail-row'));
       },
 
       visibleCells(row) {
@@ -1221,13 +1255,14 @@
               controls[0].focus();                 // several actions: step into the cell
               break;
             }
-            // A group row toggles from any of its cells (the subtotal cells have no control);
-            // a linked row opens from any cell without a control of its own, and an event row
-            // raises its event.
-            const control = controls[0] ?? row.querySelector('[aria-expanded]');
-            if (control) control.click();
+            // A linked row opens from any cell without a control of its own and an event row
+            // raises its event; otherwise a group row (the subtotal cells have no control) or a
+            // row with a detail toggles from any of its cells.
+            const toggle = row.querySelector('[aria-expanded]');
+            if (controls[0]) controls[0].click();
             else if (row.dataset.href) this.openRowLink(row, event.ctrlKey || event.metaKey);
             else if (row.dataset.rowEvent) this.rowAction(row.dataset.rowEvent, row.dataset.key);
+            else if (toggle) toggle.click();
             else return;
             break;
           }
@@ -1247,10 +1282,30 @@
       // ---- Row link and row actions ----------------------------------------------------------
 
       onRowClick(event) {
-        const row = event.target.closest?.('tr[data-href], tr[data-row-event]');
-        if (!row || event.defaultPrevented) return;
+        if (event.defaultPrevented || !event.target.closest) return;
+
+        // Inside an open detail everything belongs to the host's fragment, but for our retry button.
+        if (event.target.closest('tr[data-detail-row]')) {
+          const retry = event.target.closest('[data-detail-retry]');
+          if (retry && event.type === 'click') this.loadDetail(retry.closest('tr').dataset.for);
+          return;
+        }
+
+        if (event.type === 'click' && event.target.closest('[data-detail-toggle]')) {
+          this.toggleDetail(event.target.closest('tr'));
+          return;
+        }
+
+        const row = event.target.closest('tr[data-href], tr[data-row-event], tr[data-detail]');
+        if (!row) return;
         if (event.target.closest('a, button, input, select, textarea, label, [data-actions]')) return;
         if (window.getSelection()?.toString()) return;              // selecting text is not a click
+
+        // A row with a detail and neither a link nor an event expands from anywhere on it.
+        if (!row.dataset.href && !row.dataset.rowEvent) {
+          if (event.type === 'click' && event.button === 0) this.toggleDetail(row);
+          return;
+        }
 
         // An event row has no new tab to open: a plain click raises the event, anything else is ignored.
         if (row.dataset.rowEvent) {
@@ -1289,6 +1344,161 @@
             /* cross-origin parent: nothing is sent */
           }
         }
+      },
+
+      // ---- Row detail ----------------------------------------------------------------------------
+      // A row rendered with data-detail="<url>" expands into a full-width row underneath that holds
+      // the HTML fragment at that URL. The server renders nothing but the URL and the toggle; the
+      // fragment is fetched on the first expand only, cached per URL, and re-inserted from the cache
+      // whenever the row is rendered again (sort, refresh, virtual block) while it is still open.
+
+      toggleDetail(row) {
+        const url = row?.dataset.detail;
+        if (!url) return;
+
+        const ds = detailState(this.id);
+        const next = row.nextElementSibling;
+        if (next?.hasAttribute('data-detail-row')) {
+          ds.open.delete(url);
+          ds.inflight.get(url)?.abort();
+          next.remove();
+          this.setDetailExpanded(row, false);
+          this.remeasureVirtual();
+          return;
+        }
+
+        ds.open.add(url);
+        this.openDetail(row, ds);
+      },
+
+      openDetail(row, ds) {
+        const url = row.dataset.detail;
+        const detailRow = document.createElement('tr');
+        detailRow.className = 'ng-detail-row';
+        detailRow.setAttribute('data-detail-row', '');
+        detailRow.dataset.for = url;
+        const panel = document.createElement('div');
+        panel.className = 'ng-detail-panel';
+        detailRow.insertCell().appendChild(panel);
+        row.after(detailRow);
+        this.setDetailExpanded(row, true);
+        this.sizeDetailRows();
+
+        if (ds.cache.has(url)) {
+          const html = ds.cache.get(url);
+          cacheDetail(ds, url, html);                                // most recently used
+          this.fillDetail(panel, html);
+        } else {
+          this.loadDetail(url);
+        }
+      },
+
+      async loadDetail(url) {
+        if (!url) return;
+        const ds = detailState(this.id);
+        this.detailPanels(url).forEach((panel) => this.detailStatus(panel, false));
+        if (ds.inflight.has(url)) return;                            // its result fills every panel
+
+        const controller = new AbortController();
+        ds.inflight.set(url, controller);
+        try {
+          const response = await fetch(url, { headers: { 'X-NetGrid-Detail': 'true' }, signal: controller.signal });
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          const html = await response.text();
+          cacheDetail(ds, url, html);
+          this.detailPanels(url).forEach((panel) => this.fillDetail(panel, html));
+        } catch (error) {
+          if (error?.name === 'AbortError') return;
+          console.error('[netgrid] detail fetch failed:', error);
+          this.detailPanels(url).forEach((panel) => this.detailStatus(panel, true));
+        } finally {
+          if (ds.inflight.get(url) === controller) ds.inflight.delete(url);
+        }
+      },
+
+      detailPanels(url) {
+        const body = document.getElementById(`${this.id}-body`);
+        return Array.from(body?.querySelectorAll('tr[data-detail-row]') ?? [])
+          .filter((row) => row.dataset.for === url)
+          .map((row) => row.querySelector('.ng-detail-panel'));
+      },
+
+      // Loading or error line, built from text nodes: the localized strings are never parsed as HTML.
+      detailStatus(panel, failed) {
+        const status = document.createElement('div');
+        status.className = 'ng-detail-status';
+        status.setAttribute('role', failed ? 'alert' : 'status');
+        status.append(L(failed ? 'detail.error' : 'detail.loading'));
+        if (failed) {
+          const retry = document.createElement('button');
+          retry.type = 'button';
+          retry.setAttribute('data-detail-retry', '');
+          retry.textContent = L('detail.retry');
+          status.append(retry);
+        }
+        panel.replaceChildren(status);
+        this.remeasureVirtual();
+      },
+
+      // The fragment is the host's own markup (same trust as a RawCellHtml cell); hx-* attributes in
+      // it work, and Alpine picks up any x-data on its own.
+      fillDetail(panel, html) {
+        panel.innerHTML = html;
+        if (typeof htmx !== 'undefined') htmx.process(panel);
+        this.remeasureVirtual();
+      },
+
+      setDetailExpanded(row, expanded) {
+        row.querySelector('[data-detail-toggle]')?.setAttribute('aria-expanded', String(expanded));
+      },
+
+      // New rows replaced the open ones: re-open those still wanted (from the cache when possible).
+      // A paged grid forgets rows that left the page; virtual scroll keeps them for when they return.
+      restoreDetails(prune) {
+        const ds = detailStore.get(this.id);
+        if (!ds || ds.open.size === 0) return;
+
+        const body = document.getElementById(`${this.id}-body`);
+        const present = new Set();
+        body?.querySelectorAll('tr[data-detail]').forEach((row) => {
+          const url = row.dataset.detail;
+          if (!ds.open.has(url) || row.nextElementSibling?.hasAttribute('data-detail-row')) return;
+          present.add(url);
+          this.openDetail(row, ds);
+        });
+
+        if (!prune) return;
+        for (const url of ds.open) {
+          if (present.has(url)) continue;
+          ds.open.delete(url);
+          ds.inflight.get(url)?.abort();
+        }
+      },
+
+      // The detail cell spans every visible column, and its panel is as wide as the card's viewport
+      // (sticky to its left edge) so it stays in view while a wide table scrolls sideways.
+      sizeDetailRows() {
+        const rows = this.root().querySelectorAll('tbody tr[data-detail-row]');
+        if (rows.length === 0) return;
+
+        const span = this.headerCells().length || 1;
+        const card = this.root().querySelector('[data-netgrid-card]');
+        const table = card?.querySelector('table');
+        const width = Math.min(card?.clientWidth ?? 0, table?.offsetWidth ?? 0);
+        rows.forEach((row) => {
+          row.cells[0].colSpan = span;
+          const panel = row.querySelector('.ng-detail-panel');
+          if (panel && width > 0) panel.style.width = `${width}px`;
+        });
+      },
+
+      // Virtual scroll places blocks by their measured heights: an opened, filled or closed detail
+      // changes its block's height.
+      remeasureVirtual() {
+        if (!this.isVirtual()) return;
+        const vs = virtualStore.get(this.id);
+        const body = document.getElementById(`${this.id}-body`);
+        if (vs && body) this.measureVirtualBlocks(vs, body);
       },
 
       // ---- Virtual scroll ------------------------------------------------------------------------
@@ -1441,6 +1651,7 @@
         html += spacer(below);
 
         htmx.swap(body, html, { swapStyle: 'innerHTML' });
+        this.restoreDetails(false);
         this.measureVirtualBlocks(vs, body);
 
         this.applyPinStateAll();

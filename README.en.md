@@ -100,6 +100,7 @@ flowchart LR
 | 🎨 **Theming** | Tailwind v4 | `grid`/`midnight` presets, persisted dark mode, class scanning inside C# |
 | 🔌 **Self-contained** | Embedded assets | JS + HTMX + Alpine inside the assembly, served with immutable `?v={sha}` |
 | 🖱️ **Rows** | Clickable + actions | `WithRowLink` and `WithRowActions` (links and `netgrid:action` events for your page) |
+| | Expandable detail | `WithRowDetail`: the HTML fragment is fetched only on expand, once, then cached |
 | 🔖 **Views** | Predefined + per user | `AddView(...)` on the server; each user saves their own in the browser |
 | 🔗 **Deep links** | State in URL | `page·pageSize·sort·filter·q·groupby·expand·cols·hide` — share the exact view |
 | ♿ **A11y** | Localized aria-labels | Roles, `aria-sort`, `aria-expanded`, focus rings, `x-cloak` |
@@ -619,6 +620,73 @@ window.addEventListener("message", (e) => {
 });
 ```
 
+### Expandable row detail
+
+A button at the start of each row opens a full-width row underneath with the detail you render
+(call legs, order lines, history...):
+
+```csharp
+.WithRowDetail(o => $"/orders/{o.Id}/detail")   // null = that row has no detail
+```
+
+```csharp
+// Your endpoint returns an HTML fragment (or a Razor partial)
+app.MapGet("/orders/{id:int}/detail", async (int id, ShopDb db) => Results.Content(
+    await OrderDetailHtml(db, id), "text/html; charset=utf-8"));
+```
+
+Built for performance:
+
+- **Nothing up front.** Each row carries only the URL and a few-byte button (the chevron is CSS, not a
+  per-row SVG); the detail is neither queried nor rendered until someone expands the row.
+- **One request per detail.** The fragment is fetched on the first click and kept in a client-side LRU cache
+  (50 fragments per grid): collapsing and expanding again does not hit the server. Collapsing while it loads
+  aborts the request (`AbortController`).
+- **Survives re-renders.** Open rows stay open across sorting, filtering, refreshing or a virtual-scroll block
+  coming back, re-inserted from the cache without flicker. In paged mode, rows that leave the page are forgotten.
+- **No Alpine cost.** The button has no directives: one delegated listener on the `<tbody>` serves every row,
+  and the runtime only flips `aria-expanded`.
+- `netgrid:refresh` clears the cache (the data changed) and refetches the open details.
+
+Behaviour:
+
+- Click the button, or anywhere on a row without `WithRowLink`/`WithRowEvent`. From the keyboard, `Enter`
+  on the row (when it has no link or event) or `Space` (when it has no selection).
+- The button column is pinned left and the detail panel fits the card's visible width, so it shows in full
+  even when the table scrolls sideways.
+- The request carries an `X-NetGrid-Detail: true` header (handy to return a partial without a layout). If it
+  fails, the row shows a message with "Retry". `hx-*` attributes in the fragment work.
+- The fragment is trusted HTML, like `RawCellHtml`: encode anything that comes from users.
+- Localized strings: `detail.header`, `detail.toggle.aria`, `detail.loading`, `detail.error`, `detail.retry`.
+
+Since a theme only compiles the classes the renderer emits, the themes ship **building blocks for the detail**
+(light and dark, alongside the badges):
+
+| Class | Purpose |
+|---|---|
+| `ng-detail` | Container: cards in columns that wrap to the available width |
+| `ng-detail-card` · `ng-detail-wide` | A card; `wide` spans the full width |
+| `ng-detail-title` | Card title (small caps) |
+| `ng-detail-fields` | Key → value `<dl>` (value right-aligned, monospace) |
+| `ng-detail-table` | Compact table |
+| `ng-num` · `ng-mono` | Right-aligned numeric cell · monospace text |
+
+```html
+<div class="ng-detail">
+  <section class="ng-detail-card">
+    <h3 class="ng-detail-title">Routing</h3>
+    <dl class="ng-detail-fields"><dt>Route</dt><dd>+50422807778</dd><dt>PDD</dt><dd>20 ms</dd></dl>
+  </section>
+  <section class="ng-detail-card">
+    <h3 class="ng-detail-title">Legs (2)</h3>
+    <table class="ng-detail-table">
+      <thead><tr><th>Role</th><th>From → To</th><th class="ng-num">Bill</th></tr></thead>
+      <tbody><tr><td><span class="badge badge-neutral">Customer</span></td><td class="ng-mono">50496160262 → 1100</td><td class="ng-num">0:06</td></tr></tbody>
+    </table>
+  </section>
+</div>
+```
+
 ---
 
 ## 📤 Server-side export (CSV & Excel)
@@ -750,7 +818,7 @@ order and are activated from their cell.
 | `Ctrl+Home` / `Ctrl+End` | First / last cell of the page |
 | `PageUp` / `PageDown` | Previous / next page, keeping the column |
 | `Alt+←` / `Alt+→` on a header | Narrows / widens the column by 16 px |
-| `Enter` | Activates the cell's control (link, checkbox); on a group row, expands or collapses it; on a clickable row, opens its link; with several controls, steps into the cell |
+| `Enter` | Activates the cell's control (link, checkbox); on a group row, expands or collapses it; on a clickable row, opens its link; on a row with a detail, shows or hides it; with several controls, steps into the cell |
 | `Space` | Selects the row; on a group row, expands or collapses it |
 | `↑` on the first row | Moves up to that column's sort button; `Enter` sorts, `Shift+Enter` adds to the multi-sort |
 | `↓` on a header | Moves down to the first row, same column |
@@ -837,6 +905,7 @@ you scroll down, and only the blocks near the viewport stay in the DOM.
 | `.WithRowKey(keyFn)` | — | Row key without turning selection on (used by `Event` actions) |
 | `.WithRowLink(hrefFn, target?)` | — | The whole row is clickable |
 | `.WithRowEvent(name)` | — | Clicking the row raises `netgrid:action` (excludes `WithRowLink`) |
+| `.WithRowDetail(urlFn)` | — | Expandable per-row detail, loaded on demand from `urlFn(row)` |
 | `.WithRowActions(a => ...)` | — | Actions column: `.Link(...)`, `.Event(...)`, `.Header(...)` |
 | `.WithNavLinks(...)` | `[]` | Shell navigation |
 
@@ -1114,6 +1183,7 @@ dotnet test
 - [x] i18n of grid texts: empty message, row actions, actions header, predefined views and nav links go through `TextLocalizer` (1.2.3)
 - [x] Borderless group panel: a faint band at rest and the brand ring only while a column is dragged over it (1.2.5)
 - [x] Rows that raise an event instead of navigating: `WithRowEvent` (1.2.6)
+- [x] Expandable row detail, loaded on demand and cached: `WithRowDetail` + `ng-detail-*` blocks in the themes (1.2.7)
 
 ### 🧪 Quality
 
