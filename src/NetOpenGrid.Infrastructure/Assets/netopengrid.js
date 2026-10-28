@@ -170,6 +170,14 @@
     setTimeout(run, 50);
   };
 
+  // Puts server HTML into the grid and lets htmx wire any hx-* in it. Plain innerHTML + process works the
+  // same with htmx 2 (swap(target, html, spec)) and htmx 4 (swap(ctx)), whose swap APIs differ; Alpine's
+  // own mutation observer initializes any x-data in the new nodes.
+  const swapHtml = (target, html) => {
+    target.innerHTML = html;
+    if (typeof htmx !== 'undefined' && typeof htmx.process === 'function') htmx.process(target);
+  };
+
   async function fetchRows(state) {
     if (typeof htmx === 'undefined') {
       throw new Error('NetOpenGrid: htmx is not loaded.');
@@ -207,7 +215,7 @@
       // The swap replaces every cell, focused one included: note it first so the keyboard
       // user lands back on the same row/column of the new rows.
       const refocus = body.contains(document.activeElement);
-      htmx.swap(body, html, { swapStyle: 'innerHTML' });
+      swapHtml(body, html);
       state.applyRowsMeta(response.headers);
       if (state.isVirtual?.()) state.virtualReset(body);
       else state.restoreDetails(true);
@@ -1650,7 +1658,7 @@
         for (let block = vs.first; block <= vs.last; block++) html += vs.blocks.get(block) ?? '';
         html += spacer(below);
 
-        htmx.swap(body, html, { swapStyle: 'innerHTML' });
+        swapHtml(body, html);
         this.restoreDetails(false);
         this.measureVirtualBlocks(vs, body);
 

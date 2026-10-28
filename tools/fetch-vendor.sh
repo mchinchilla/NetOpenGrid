@@ -8,8 +8,8 @@ mkdir -p "$VENDOR"
 
 echo "[netopengrid] Downloading vendor assets to $VENDOR (embedded into the component assembly)"
 
-curl -fsSL "https://unpkg.com/htmx.org@2/dist/htmx.min.js" -o "$VENDOR/htmx.min.js"
-curl -fsSL "https://cdn.jsdelivr.net/npm/alpinejs@3/dist/cdn.min.js" -o "$VENDOR/alpine.min.js"
+curl -fsSL "https://unpkg.com/htmx.org@4.0.0/dist/htmx.min.js" -o "$VENDOR/htmx.min.js"
+curl -fsSL "https://cdn.jsdelivr.net/npm/alpinejs@3.17.5/dist/cdn.min.js" -o "$VENDOR/alpine.min.js"
 
 echo "[netopengrid] Done (rebuild NetOpenGrid.Infrastructure to re-embed):"
 ls -la "$VENDOR"

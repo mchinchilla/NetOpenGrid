@@ -218,6 +218,7 @@ builder.Services.AddNetOpenGrid(
 ## Requirements and notes
 
 - .NET 10 / ASP.NET Core. `NetOpenGrid.Persistence.EFCore` targets EF Core 10.
+- Embedded client libraries: htmx 4.0.0 and Alpine.js 3.17.5. A host page that renders grids inline (`GridAssetTags.Head` + the fragment) supplies its own htmx (2.x or 4.x) and Alpine; the runtime only uses `htmx.process`.
 - Themes are plain Tailwind v4 CSS that you compile and serve from `o.CssPath` as
   `netopengrid-{theme}.css`. Copy `themes/grid.css` from the repository as a starting point.
 - To match your app without replacing the theme: `o.BrandColor = "#0d9488"` (or `.WithBrandColor(...)`
