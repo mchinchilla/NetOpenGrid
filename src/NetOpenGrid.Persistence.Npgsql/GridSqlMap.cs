@@ -41,6 +41,21 @@ public sealed record GridSqlColumn(string SqlExpression, Type ClrType, string Ou
 /// Deterministic tiebreaker appended to every ORDER BY. Mandatory: LIMIT/OFFSET over a
 /// non-total order silently repeats and drops rows across pages. Cannot be empty.
 /// </param>
+/// <param name="CountCap">
+/// Optional ceiling for the pager's total. When set, the count is
+/// <c>SELECT COUNT(*)::int FROM (SELECT 1 FROM ({Projection} {where}) src LIMIT @__cap + 1) t</c>
+/// (parameter <c>@__cap</c> = this value), so it stops after <c>cap + 1</c> rows instead of
+/// scanning the whole filtered set. <c>PageResult.TotalCount</c> is then at most <c>cap + 1</c> and
+/// <c>TotalCountIsCapped</c> is true when it reached <c>cap + 1</c>. <c>null</c> (default) keeps the
+/// exact <c>COUNT(*)</c>. Grouping always counts exactly.
+/// </param>
+/// <param name="SearchPredicateSql">
+/// Optional SQL predicate template that REPLACES the automatic OR-of-ILIKE over
+/// <see cref="GridSqlColumn.Searchable"/> columns. It references the bound search value as
+/// <c>@q</c>: the trimmed (and <c>MaxSearchLength</c>-truncated) term, LIKE-escaped and wrapped as
+/// <c>%term%</c>. Emitted as <c>AND (template)</c> only when a search term is present. Must be
+/// trusted SQL written by the application, never user input. <c>null</c> keeps today's behavior.
+/// </param>
 /// <param name="MaxGroupingRows">
 /// Grouping materializes the whole filtered set (spec §5.6). Above this count the source
 /// fails loudly instead of eating memory — with a <c>GridQueryException</c> (400), because
@@ -51,7 +66,9 @@ public sealed record GridSqlMap(
     string BaseWhere,
     IReadOnlyDictionary<string, GridSqlColumn> Columns,
     string DefaultOrderBy,
-    int MaxGroupingRows = 5000)
+    int MaxGroupingRows = 5000,
+    int? CountCap = null,
+    string? SearchPredicateSql = null)
 {
     // Validated property overrides of the primary constructor's parameters (the standard C#
     // record pattern for constructor validation: the unqualified `BaseWhere`/`DefaultOrderBy`

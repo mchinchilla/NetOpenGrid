@@ -1147,6 +1147,7 @@ dotnet test
 
 - [x] `EFCoreGridDataSource<T>`: filter/sort push-down to SQL reusing the same strategies
 - [x] `NpgsqlGridDataSource<T>`: PostgreSQL push-down via `GridSqlMap` / `GridSqlBuilder`
+  - [x] `GridSqlMap.CountCap`: capped count (`TotalCountIsCapped`, pager "more than N"); `GridSqlMap.SearchPredicateSql`: custom search predicate using `@q`, replacing the OR over `Searchable` columns. Virtual-scroll grids never use the cap (exact count). (1.4.0)
 - [x] Excel-style filters with per-value counts
 - [x] Pinned and reorderable columns
 - [x] Client label i18n

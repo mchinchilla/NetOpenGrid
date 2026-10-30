@@ -112,7 +112,9 @@ public sealed class NpgsqlGridDataSource<TRow>
 
         await using var conn = await _dataSource.OpenConnectionAsync(cancellationToken);
 
-        var total = await CountAsync(conn, where, parameters, cancellationToken);
+        var useCap = GridSqlBuilder.UsesCap(_map, query);
+        var total = await CountAsync(conn, where, parameters, cancellationToken, useCap);
+        var capped = GridSqlBuilder.IsCapped(_map, useCap, total);
 
         var page = query.Paging.Page < 1 ? 1 : query.Paging.Page;
         var size = query.Paging.PageSize < 1 ? 1 : query.Paging.PageSize;
@@ -126,7 +128,7 @@ public sealed class NpgsqlGridDataSource<TRow>
         await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
         var rows = await MapRowsAsync<TRow>(reader, cancellationToken);
 
-        return new PageResult<TRow>(rows, total, page, size);
+        return new PageResult<TRow>(rows, total, page, size) { TotalCountIsCapped = capped };
     }
 
     public async ValueTask<GridValueCounts> GetValuesAsync(
@@ -261,7 +263,8 @@ public sealed class NpgsqlGridDataSource<TRow>
     }
 
     private async Task<int> CountAsync(
-        NpgsqlConnection conn, string where, IReadOnlyList<NpgsqlParameter> parameters, CancellationToken cancellationToken)
+        NpgsqlConnection conn, string where, IReadOnlyList<NpgsqlParameter> parameters, CancellationToken cancellationToken,
+        bool useCap = false)
     {
         // Wraps the projection as a derived table with `where` INSIDE the parens — see the
         // GetValuesAsync doc comment for why this replaced the earlier FROM-clause-extraction
@@ -269,9 +272,9 @@ public sealed class NpgsqlGridDataSource<TRow>
         // "from" (valid_FROM, FROM_status, ...) and silently produced wrong SQL or wrong counts
         // for a WITH/DISTINCT projection. COUNT(*) needs no inner-scoped column reference at
         // all, so the plain wrap works with zero parsing.
-        var sql = $"SELECT COUNT(*)::int FROM ({_map.Projection} {where}) AS src";
+        var sql = GridSqlBuilder.BuildCountSql(_map, where, useCap);
 
-        await using var cmd = CreateCommand(conn, sql, parameters);
+        await using var cmd = CreateCommand(conn, sql, GridSqlBuilder.BuildCountParameters(_map, parameters, useCap));
         var result = await cmd.ExecuteScalarAsync(cancellationToken);
         return result is int count ? count : Convert.ToInt32(result, CultureInfo.InvariantCulture);
     }

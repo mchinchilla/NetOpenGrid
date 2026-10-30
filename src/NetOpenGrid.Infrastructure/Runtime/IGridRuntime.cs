@@ -3,7 +3,7 @@ using NetOpenGrid.Application.Options;
 
 namespace NetOpenGrid.Infrastructure.Runtime;
 
-public sealed record GridRowsResponse(string Html, int TotalCount, int Page, int PageSize, int PageCount);
+public sealed record GridRowsResponse(string Html, int TotalCount, int Page, int PageSize, int PageCount, bool TotalCountIsCapped = false);
 
 /// <summary>
 /// An export (CSV or xlsx) whose first page is already loaded. Check <see cref="ExceedsLimit"/>

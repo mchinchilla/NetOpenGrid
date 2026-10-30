@@ -242,4 +242,31 @@ public class LocalizationTests
         Assert.Equal(await plain.RenderShellAsync(OneRow()), await identity.RenderShellAsync(OneRow()));
         Assert.Equal(await plain.RenderRowsAsync(EmptyResult()), await identity.RenderRowsAsync(EmptyResult()));
     }
+
+    [Fact]
+    public async Task Pager_shows_more_than_cap()
+    {
+        var capped = new GridExecutionResult<LocaleRow>(
+            GridQuery.Empty,
+            new PageResult<LocaleRow>([.. Enumerable.Repeat(new LocaleRow("A", "B"), 10)], 10001, 1, 10) { TotalCountIsCapped = true });
+
+        var es = await Renderer(new NetOpenGridLocalizationOptions().UseCulture("es")).RenderShellAsync(capped);
+        var en = await Renderer(new NetOpenGridLocalizationOptions()).RenderShellAsync(capped);
+
+        Assert.Contains("\"capped\":true", es);
+        Assert.Contains("\"range.formatCapped\":", es);
+        Assert.Contains("\"records.manyCapped\":", es);
+        var esLocale = new NetOpenGridLocalizationOptions().UseCulture("es");
+        Assert.Equal("{from}-{to} de más de {total}", esLocale["range.formatCapped"]);
+        Assert.Equal("más de {n} registros", esLocale["records.manyCapped"]);
+        Assert.Equal("{from}-{to} of more than {total}", new NetOpenGridLocalizationOptions()["range.formatCapped"]);
+        Assert.Contains("\"range.formatCapped\":", en);
+
+        // "Next" stays available while the page is full, even past the capped total.
+        var page = new PageResult<LocaleRow>([.. Enumerable.Repeat(new LocaleRow("A", "B"), 10)], 10001, 1001, 10) { TotalCountIsCapped = true };
+        Assert.True(page.HasNext);
+
+        // Uncapped output is untouched.
+        Assert.DoesNotContain("capped\":true", await Renderer(new NetOpenGridLocalizationOptions()).RenderShellAsync(EmptyResult()));
+    }
 }

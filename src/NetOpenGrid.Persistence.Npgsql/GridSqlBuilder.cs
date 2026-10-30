@@ -68,12 +68,22 @@ public static class GridSqlBuilder
         if (!string.IsNullOrWhiteSpace(query.Search))
         {
             var searchable = map.Columns.Values.Where(static c => c.Searchable).ToArray();
-            if (searchable.Length > 0)
+            var hasPredicate = !string.IsNullOrWhiteSpace(map.SearchPredicateSql);
+            if (hasPredicate || searchable.Length > 0)
             {
                 var term = query.Search.Trim();
                 if (term.Length > MaxSearchLength)
                 {
                     term = term[..MaxSearchLength];
+                }
+
+                if (hasPredicate)
+                {
+                    // Custom predicate (e.g. a trigram-indexable expression) replaces the OR.
+                    // "@q" is a fixed name: the generic binder only emits "@p{N}", so no clash.
+                    parameters.Add(new NpgsqlParameter("@q", $"%{EscapeLikePattern(term)}%"));
+                    sb.Append(" AND (").Append(map.SearchPredicateSql).Append(')');
+                    return (sb.ToString(), parameters);
                 }
 
                 var name = Bind(parameters, $"%{EscapeLikePattern(term)}%");
@@ -85,6 +95,35 @@ public static class GridSqlBuilder
 
         return (sb.ToString(), parameters);
     }
+
+    /// <summary>
+    /// The pager's count statement. Uncapped (<see cref="GridSqlMap.CountCap"/> null) it is the
+    /// exact <c>COUNT(*)</c> over the projection; capped, it stops after <c>cap + 1</c> rows and
+    /// needs the <c>@__cap</c> parameter (<see cref="CapParameterName"/>).
+    /// </summary>
+    public static string BuildCountSql(GridSqlMap map, string where, bool capped) =>
+        capped && map.CountCap is not null
+            ? $"SELECT COUNT(*)::int FROM (SELECT 1 FROM ({map.Projection} {where}) AS src LIMIT @__cap + 1) AS t"
+            : $"SELECT COUNT(*)::int FROM ({map.Projection} {where}) AS src";
+
+    public const string CapParameterName = "__cap";
+
+    /// <summary>Whether the count is capped for this query: a map cap is set and the query did not ask for the exact total.</summary>
+    public static bool UsesCap(GridSqlMap map, GridQuery query) => map.CountCap is not null && !query.ExactCount;
+
+    /// <summary>Parameters of the count command: the where parameters plus <c>@__cap</c> when capped.</summary>
+    public static IReadOnlyList<NpgsqlParameter> BuildCountParameters(GridSqlMap map, IReadOnlyList<NpgsqlParameter> where, bool capped)
+    {
+        if (!capped || map.CountCap is not { } cap)
+        {
+            return where;
+        }
+
+        return [.. where, new NpgsqlParameter(CapParameterName, cap)];
+    }
+
+    /// <summary>True when a capped count reached cap + 1 (the real total is unknown, at least that).</summary>
+    public static bool IsCapped(GridSqlMap map, bool capped, int total) => capped && map.CountCap is { } cap && total > cap;
 
     /// <summary>
     /// Builds one filter's SQL fragment and binds its value(s).

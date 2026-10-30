@@ -31,6 +31,8 @@
     'records.many': '{n} records',
     'range.empty': 'No records',
     'range.format': '{from}-{to} of {total}',
+    'records.manyCapped': 'more than {n} records',
+    'range.formatCapped': '{from}-{to} of more than {total}',
     'select.selected.one': '1 selected',
     'select.selected.many': '{n} selected',
     'chips.anyOf': 'any of {values}',
@@ -281,10 +283,19 @@
         if (this.meta.total === 0) return L('range.empty');
         const from = (this.page - 1) * this.pageSize + 1;
         const to = Math.min(this.page * this.pageSize, this.meta.total);
+        if (this.meta.capped) {
+          return L('range.formatCapped', { from, to, total: this.cappedTotal() });
+        }
         return L('range.format', { from, to, total: this.meta.total });
       },
 
+      // A capped count reports cap + 1; the label shows the cap itself ("more than 10,000").
+      cappedTotal() {
+        return Math.max(0, this.meta.total - 1);
+      },
+
       get recordsLabel() {
+        if (this.meta.capped) return L('records.manyCapped', { n: this.cappedTotal() });
         return this.meta.total === 1
           ? L('records.one')
           : L('records.many', { n: this.meta.total });
@@ -1029,7 +1040,8 @@
             total: parseInt(total, 10) || 0,
             page: parseInt(headers.get('X-Grid-Page'), 10) || this.page,
             pageSize: parseInt(headers.get('X-Grid-Page-Size'), 10) || this.pageSize,
-            pages: Math.max(1, parseInt(headers.get('X-Grid-Page-Count'), 10) || 1)
+            pages: Math.max(1, parseInt(headers.get('X-Grid-Page-Count'), 10) || 1),
+            capped: headers.get('X-Grid-Total-Capped') === '1'
           };
           this.page = this.meta.page;
           this.pageSize = this.meta.pageSize;

@@ -44,6 +44,13 @@ public sealed class GridRuntime<TItem> : IGridRuntime
 
     public GridExportFormats ExportFormats => _options.ExportFormats;
 
+    /// <summary>
+    /// Virtual scroll sizes its scroller (and the footer totals row) from the exact total, so a
+    /// virtual grid never uses the data source's capped count.
+    /// </summary>
+    private GridQuery PageLoadQuery(GridQuery query) =>
+        _options.VirtualScroll is not null ? query with { ExactCount = true } : query;
+
     public async ValueTask<GridRowsResponse> RenderRowsAsync(GridRequestValues values, CancellationToken cancellationToken = default)
     {
         var normalization = GridRequestParser.Parse(values, _options);
@@ -64,7 +71,7 @@ public sealed class GridRuntime<TItem> : IGridRuntime
                 Math.Max(grouped.TotalPages, 1));
         }
 
-        var result = await new GridQueryEngine<TItem>(_dataSource).ExecuteAsync(normalization.Query, cancellationToken);
+        var result = await new GridQueryEngine<TItem>(_dataSource).ExecuteAsync(PageLoadQuery(normalization.Query), cancellationToken);
         var totals = await LoadTotalsAsync(result, cancellationToken);
         var html = await _renderer.RenderRowsAsync(result, columnOrder, cancellationToken, totals, hidden);
 
@@ -73,7 +80,8 @@ public sealed class GridRuntime<TItem> : IGridRuntime
             result.Page.TotalCount,
             result.Page.Page,
             result.Page.PageSize,
-            Math.Max(result.Page.TotalPages, 1));
+            Math.Max(result.Page.TotalPages, 1),
+            result.Page.TotalCountIsCapped);
     }
 
     /// <summary>
@@ -207,7 +215,7 @@ public sealed class GridRuntime<TItem> : IGridRuntime
             ? Math.Min(_options.MaxExportRows, Export.GridXlsxWriter.MaxDataRows)
             : _options.MaxExportRows;
 
-        GridQuery PageQuery(int page) => normalization.Query with { Paging = new PageRequest(page, pageSize) };
+        GridQuery PageQuery(int page) => normalization.Query with { Paging = new PageRequest(page, pageSize), ExactCount = true };
 
         var first = await engine.ExecuteAsync(PageQuery(1), cancellationToken);
 
@@ -288,7 +296,7 @@ public sealed class GridRuntime<TItem> : IGridRuntime
     public async ValueTask<string> RenderShellAsync(GridRequestValues values, CancellationToken cancellationToken = default)
     {
         var normalization = GridRequestParser.Parse(values, _options);
-        var result = await new GridQueryEngine<TItem>(_dataSource).ExecuteAsync(normalization.Query, cancellationToken);
+        var result = await new GridQueryEngine<TItem>(_dataSource).ExecuteAsync(PageLoadQuery(normalization.Query), cancellationToken);
         // ?embed=1 lo pone la página anfitriona en el src del iframe; abierto a pelo, el grid
         // sigue trayendo su propio cromo.
         var embedded = values.Get("embed") is "1" or "true";
@@ -299,7 +307,7 @@ public sealed class GridRuntime<TItem> : IGridRuntime
     public async ValueTask<string> RenderFragmentAsync(GridRequestValues values, CancellationToken cancellationToken = default)
     {
         var normalization = GridRequestParser.Parse(values, _options);
-        var result = await new GridQueryEngine<TItem>(_dataSource).ExecuteAsync(normalization.Query, cancellationToken);
+        var result = await new GridQueryEngine<TItem>(_dataSource).ExecuteAsync(PageLoadQuery(normalization.Query), cancellationToken);
         var totals = await LoadTotalsAsync(result, cancellationToken);
         return await _renderer.RenderFragmentAsync(result, ResolveColumnOrder(values), cancellationToken, totals, ResolveHiddenFields(values));
     }

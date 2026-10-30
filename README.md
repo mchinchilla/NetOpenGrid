@@ -1148,6 +1148,7 @@ dotnet test
 
 - [x] `EFCoreGridDataSource<T>`: push-down de filtros/sort a SQL reutilizando las mismas estrategias
 - [x] `NpgsqlGridDataSource<T>`: push-down a PostgreSQL con `GridSqlMap` / `GridSqlBuilder`
+  - [x] `GridSqlMap.CountCap`: conteo con tope (`TotalCountIsCapped`, pager "más de N"); `GridSqlMap.SearchPredicateSql`: predicado de búsqueda propio con `@q` que reemplaza el OR de columnas `Searchable`. Las grids con scroll virtual nunca usan el tope (conteo exacto). (1.4.0)
 - [x] Filtros tipo Excel con conteo por valor
 - [x] Columnas fijadas (pin) y reordenables
 - [x] i18n de labels del cliente

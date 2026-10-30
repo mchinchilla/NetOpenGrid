@@ -1600,6 +1600,11 @@ public sealed class GridHtmlRenderer<TItem>
         w.Write(page.PageSize.ToString(CultureInfo.InvariantCulture));
         w.Write(",\"pages\":");
         w.Write(Math.Max(page.TotalPages, 1).ToString(CultureInfo.InvariantCulture));
+        if (page.TotalCountIsCapped)
+        {
+            w.Write(",\"capped\":true");
+        }
+
         w.Write("};");
 
         w.Write("__NETGRID__.virtual=__NETGRID__.virtual||{};__NETGRID__.virtual[");

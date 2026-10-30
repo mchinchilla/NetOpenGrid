@@ -409,4 +409,94 @@ public class GridSqlBuilderTests
         Assert.Equal(string.Empty, sql);
         Assert.Empty(slots);
     }
+
+    [Fact]
+    public void Count_is_capped_at_cap_plus_one()
+    {
+        var map = Map() with { CountCap = 10000 };
+        var (where, _) = GridSqlBuilder.BuildWhere(map, GridQuery.Empty, null);
+
+        var sql = GridSqlBuilder.BuildCountSql(map, where, capped: true);
+
+        Assert.Equal(
+            $"SELECT COUNT(*)::int FROM (SELECT 1 FROM ({map.Projection} {where}) AS src LIMIT @__cap + 1) AS t",
+            sql);
+        Assert.Equal("__cap", GridSqlBuilder.CapParameterName);
+    }
+
+    [Fact]
+    public void Uncapped_map_counts_exactly()
+    {
+        var map = Map();
+        var (where, _) = GridSqlBuilder.BuildWhere(map, GridQuery.Empty, null);
+
+        Assert.Null(map.CountCap);
+        Assert.Equal(
+            $"SELECT COUNT(*)::int FROM ({map.Projection} {where}) AS src",
+            GridSqlBuilder.BuildCountSql(map, where, capped: true));
+        // grouping asks for an exact count even on a capped map
+        Assert.Equal(
+            $"SELECT COUNT(*)::int FROM ({map.Projection} {where}) AS src",
+            GridSqlBuilder.BuildCountSql(map with { CountCap = 5 }, where, capped: false));
+    }
+
+    [Fact]
+    public void Search_predicate_replaces_searchable_or()
+    {
+        var query = GridQuery.Empty with { Search = "  50%_off  " };
+        var map = Map() with { SearchPredicateSql = "p.search_text ILIKE @q" };
+
+        var (sql, ps) = GridSqlBuilder.BuildWhere(map, query, null);
+
+        Assert.Equal("WHERE (p.active = TRUE) AND (p.search_text ILIKE @q)", sql);
+        var q = Assert.Single(ps);
+        Assert.Equal("@q", q.ParameterName);
+        Assert.Equal(@"%50\%\_off%", q.Value);
+
+        // Unset: today's OR over Searchable columns, unchanged.
+        var (orSql, orPs) = GridSqlBuilder.BuildWhere(Map(), query, null);
+        Assert.Equal("WHERE (p.active = TRUE) AND (p.code ILIKE @p0 OR p.company_name ILIKE @p0)", orSql.Replace("::text", ""));
+        Assert.Single(orPs);
+
+        // No search term: the predicate is not emitted and @q not bound.
+        var (noTerm, noPs) = GridSqlBuilder.BuildWhere(map, GridQuery.Empty, null);
+        Assert.Equal("WHERE (p.active = TRUE)", noTerm);
+        Assert.Empty(noPs);
+    }
+
+    [Fact]
+    public void Search_predicate_truncates_long_terms()
+    {
+        var map = Map() with { SearchPredicateSql = "x ILIKE @q" };
+        var (_, ps) = GridSqlBuilder.BuildWhere(map, GridQuery.Empty with { Search = new string('a', 500) }, null);
+
+        Assert.Equal($"%{new string('a', 200)}%", ps[0].Value);
+    }
+
+    [Fact]
+    public void Capped_count_binds_cap_and_flags_cap_plus_one()
+    {
+        var map = Map() with { CountCap = 10000 };
+        var (_, where) = GridSqlBuilder.BuildWhere(map, GridQuery.Empty, null);
+
+        Assert.True(GridSqlBuilder.UsesCap(map, GridQuery.Empty));
+        var ps = GridSqlBuilder.BuildCountParameters(map, where, capped: true);
+        var cap = Assert.Single(ps, p => p.ParameterName == "__cap");
+        Assert.Equal(10000, cap.Value);
+
+        Assert.True(GridSqlBuilder.IsCapped(map, true, 10001));
+        Assert.False(GridSqlBuilder.IsCapped(map, true, 10000));
+    }
+
+    [Fact]
+    public void ExactCount_query_disables_the_cap()
+    {
+        var map = Map() with { CountCap = 10000 };
+        var exact = GridQuery.Empty with { ExactCount = true };
+        var (_, where) = GridSqlBuilder.BuildWhere(map, exact, null);
+
+        Assert.False(GridSqlBuilder.UsesCap(map, exact));
+        Assert.DoesNotContain(GridSqlBuilder.BuildCountParameters(map, where, capped: false), p => p.ParameterName == "__cap");
+        Assert.False(GridSqlBuilder.IsCapped(map, false, 20000));
+    }
 }

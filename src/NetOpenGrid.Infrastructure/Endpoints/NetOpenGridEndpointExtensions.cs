@@ -133,6 +133,11 @@ public static class NetOpenGridEndpointExtensions
         headers["X-Grid-Page"] = response.Page.ToString(System.Globalization.CultureInfo.InvariantCulture);
         headers["X-Grid-Page-Size"] = response.PageSize.ToString(System.Globalization.CultureInfo.InvariantCulture);
         headers["X-Grid-Page-Count"] = response.PageCount.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        if (response.TotalCountIsCapped)
+        {
+            headers["X-Grid-Total-Capped"] = "1";
+        }
+
         headers["Cache-Control"] = "no-store";
     }
 }
