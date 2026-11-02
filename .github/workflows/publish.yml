@@ -143,7 +143,7 @@ jobs:
         id: nuget-login
         uses: NuGet/login@v1
         with:
-          user: ${{ secrets.NUGET_USER }}
+          user: mchinchilla73
 
       - name: Push to nuget.org
         env:
