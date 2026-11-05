@@ -1181,17 +1181,18 @@ public sealed class GridHtmlRenderer<TItem>
         w.Write("</tr></thead>");
     }
 
-    /// <summary>Excel-like filter popover anchored to its own column header, opening inward.</summary>
-    /// <summary>Excel-style filter popover anchored to its own column header, opening inward.</summary>
+    /// <summary>
+    /// Excel-style filter popover anchored to its own column header, opening inward. It is
+    /// rendered <c>position:fixed</c> and placed by <c>positionPopover</c> in netopengrid.js,
+    /// so the card's overflow clip cannot cut it off when the grid has few rows.
+    /// </summary>
     private void AppendFilterPopover(TextWriter w, GridColumn<TItem> column, bool isFirstFilterable)
     {
         w.Write("<div x-show=\"editing === ");
         AppendJsQuoted(w, column.Field);
         w.Write("\" x-cloak @click.outside=\"cancelEditing()\" data-popover=\"");
         AppendEncoded(w, column.Field);
-        w.Write("\" :class=\"popoverClass(");
-        AppendJsQuoted(w, column.Field);
-        w.Write(")\" class=\"absolute z-30 w-64 space-y-3 rounded-xl border border-neutral-200 bg-white p-3 text-left shadow-xl dark:border-neutral-700 dark:bg-neutral-900\">");
+        w.Write("\" style=\"position:fixed\" class=\"z-30 w-64 space-y-3 rounded-xl border border-neutral-200 bg-white p-3 text-left shadow-xl dark:border-neutral-700 dark:bg-neutral-900\">");
         w.Write("<div class=\"text-xs font-semibold tracking-wide text-neutral-500 uppercase\" x-text=\"editingLabel\"></div>");
 
         if (IsListMode(column))

@@ -265,7 +265,6 @@
       editing: null,
       editingOp: 'equals',
       editingValue: '',
-      popoverFlip: {},
       listItems: {},
       listMeta: {},
       listSearch: '',
@@ -370,6 +369,14 @@
         this.loadColumnWidths();
 
         window.addEventListener('resize', () => this.applyPinnedOffsets());
+
+        // The filter popover is position:fixed (see positionPopover), so it must follow its
+        // header when the page, the card or any ancestor scrolls, and when the viewport resizes.
+        const followPopover = () => {
+          if (this.editing !== null) this.positionPopover(this.editing);
+        };
+        window.addEventListener('resize', followPopover);
+        window.addEventListener('scroll', followPopover, { capture: true, passive: true });
 
         if (this.isVirtual()) {
           // The server's first render is block 0 only when it used the block size on page 1
@@ -1778,19 +1785,14 @@
         const existing = this.filters[field];
         this.editingOp = existing?.op || 'equals';
         this.editingValue = existing?.value || '';
-        this.popoverFlip = {};
         this.listSearch = '';
-
-        const anchor = event?.currentTarget;
 
         if (this.columnInfo(field)?.mode === 'list') {
           this.listItems[field] = null;
           this.loadListValues(field);
         }
 
-        if (anchor) {
-          requestAnimationFrame(() => this.positionPopover(field, anchor));
-        }
+        requestAnimationFrame(() => this.positionPopover(field));
       },
 
       async loadListValues(field) {
@@ -1849,37 +1851,78 @@
         return L('filter.values.truncated', { shown: this.listItems[field]?.length ?? 0, total: meta.totalDistinct });
       },
 
-      popoverClass(field) {
-        const meta = (window.__NETGRID__?.columns?.[id] || []).find((c) => c.field === field);
-        const flip = this.popoverFlip[field] || {};
-        const x = flip.x || meta?.flipX || 'right';
-        const y = flip.y || 'down';
-        return `${x === 'left' ? 'left-0' : 'right-0'} ${y === 'down' ? 'top-full mt-2' : 'bottom-full mb-2'}`;
-      },
-
-      positionPopover(field, anchor) {
+      // The popover lives inside the card, whose overflow (horizontal scroll / virtual body)
+      // clips any absolutely positioned child: with only a couple of rows the list was cut
+      // off. position:fixed escapes that clip; it is placed against its header cell in
+      // viewport coordinates, below it when it fits, above otherwise, clamped to the viewport.
+      positionPopover(field) {
         if (this.editing !== field) return;
         const popover = this.root().querySelector(`[data-popover="${field}"]`);
-        const card = popover?.closest('[data-netgrid-card]');
-        if (!popover || !card) return;
+        const th = popover?.closest('th');
+        if (!popover || !th) return;
 
-        const p = popover.getBoundingClientRect();
-        const c = card.getBoundingClientRect();
-        const flip = {};
-
-        if (p.left < c.left + 1) flip.x = 'right';
-        else if (p.right > c.right - 1) flip.x = 'left';
-
-        if (p.bottom > c.bottom + 1) flip.y = 'up';
-
-        if (flip.x || flip.y) {
-          this.popoverFlip = { [field]: flip };
+        // The popover changes size after it opens (value list arriving, list search): re-fit
+        // on every resize. Re-fitting settles in one pass, so this does not loop.
+        if (!popover.__ngResize && typeof ResizeObserver === 'function') {
+          popover.__ngResize = new ResizeObserver(() => {
+            if (this.editing === field) this.positionPopover(field);
+          });
+          popover.__ngResize.observe(popover);
         }
+
+        const GAP = 8;
+        const EDGE = 8;
+        const s = popover.style;
+        s.position = 'fixed';
+        s.right = 'auto';
+        s.bottom = 'auto';
+        s.margin = '0';
+        s.maxHeight = '';
+        s.overflowY = '';
+
+        const a = th.getBoundingClientRect();
+        const vw = document.documentElement.clientWidth;
+        const vh = document.documentElement.clientHeight;
+        const w = popover.offsetWidth;
+        const h = popover.offsetHeight;
+
+        // Open inward: the first filterable column aligns to its header's left edge, the rest
+        // to their right edge; switch sides if that runs off-screen, then clamp.
+        const meta = this.columnInfo(field);
+        let left = meta?.flipX === 'left' ? a.left : a.right - w;
+        if (left < EDGE) left = a.left;
+        else if (left + w > vw - EDGE) left = a.right - w;
+        left = Math.max(EDGE, Math.min(left, vw - w - EDGE));
+
+        const below = a.bottom + GAP;
+        const above = a.top - GAP - h;
+        let top = below;
+
+        // Embedded (?embed=1): the iframe is the viewport, and a host that fits the frame to its
+        // content ignores fixed elements. Ask for room instead: a min-height on <html> makes the
+        // host grow the frame so the popover opens whole below its header. A fixed target, not
+        // a padding re-derived from the viewport, so the resize it triggers does not loop.
+        const html = document.documentElement;
+        if (window.self !== window.top) {
+          html.style.minHeight = `${Math.ceil(below + h + EDGE + window.scrollY)}px`;
+        }
+
+        if (below + h > vh - EDGE) {
+          if (above >= EDGE) {
+            top = above;
+          } else {
+            s.maxHeight = `${Math.max(120, vh - below - EDGE)}px`;
+            s.overflowY = 'auto';
+          }
+        }
+
+        s.left = `${Math.round(left)}px`;
+        s.top = `${Math.round(top)}px`;
       },
 
       cancelEditing() {
-        this.popoverFlip = {};
         this.editing = null;
+        document.documentElement.style.minHeight = '';
       },
 
       async applyFilter() {
@@ -1897,7 +1940,7 @@
             delete this.filters[field];
           }
 
-          this.editing = null;
+          this.cancelEditing();
           this.page = 1;
           await this.refresh();
           return;
@@ -1911,7 +1954,7 @@
           delete this.filters[field];
         }
 
-        this.editing = null;
+        this.cancelEditing();
         this.page = 1;
         await this.refresh();
       },
