@@ -45,6 +45,9 @@ public sealed class JsonGridOptionsBuilder
     private string? _rowActionsHeader;
     private bool _rowActionsPinned;
     private bool _enableRowSelection;
+    private GridSelectionScope _selectionScope = GridSelectionScope.All;
+    private Func<JsonElement, bool>? _rowSelectable;
+    private readonly List<GridBulkAction<JsonElement>> _bulkActions = [];
     private List<GridNavLink> _navLinks = [];
 
     public JsonGridOptionsBuilder WithId(string id) { _id = id; return this; }
@@ -176,6 +179,40 @@ public sealed class JsonGridOptionsBuilder
         return this;
     }
 
+    /// <summary>
+    /// How long a row stays selected. <see cref="GridSelectionScope.All"/> (default) keeps the selection
+    /// across pages, sorts, filters and searches; <see cref="GridSelectionScope.Page"/> empties it on any
+    /// of those, so bulk actions only ever receive rows the user is looking at.
+    /// </summary>
+    public JsonGridOptionsBuilder WithSelectionScope(GridSelectionScope scope)
+    {
+        _selectionScope = scope;
+        return this;
+    }
+
+    /// <summary>
+    /// Limits which rows can be selected: a row that fails <paramref name="predicate"/> gets a
+    /// disabled checkbox and "select all" skips it. Needs <c>EnableRowSelection</c>.
+    /// </summary>
+    public JsonGridOptionsBuilder RowSelectable(Func<JsonElement, bool> predicate)
+    {
+        ArgumentNullException.ThrowIfNull(predicate);
+        _rowSelectable = predicate;
+        return this;
+    }
+
+    /// <summary>
+    /// Adds a button to the selection bar. Clicking it raises <c>netgrid:bulk-action</c> with
+    /// <c>{ grid, action, keys, count }</c> on the grid root (and posts the same payload to a
+    /// same-origin parent when the grid lives in an iframe); the host page does the work.
+    /// Needs <c>EnableRowSelection</c>.
+    /// </summary>
+    public JsonGridOptionsBuilder AddBulkAction(string name, Action<GridBulkActionBuilder<JsonElement>>? configure = null)
+    {
+        _bulkActions.Add(GridBulkActionRules.Create(name, configure, _bulkActions));
+        return this;
+    }
+
     public JsonGridOptionsBuilder AddColumn(string field, Action<JsonColumnBuilder>? configure = null)
     {
         var columnBuilder = new JsonColumnBuilder(field);
@@ -206,6 +243,8 @@ public sealed class JsonGridOptionsBuilder
         {
             throw new GridConfigurationException("EnableRowSelection requires a RowKey function.");
         }
+
+        GridBulkActionRules.Validate(_enableRowSelection, _bulkActions.Count > 0, _rowSelectable is not null);
 
         if (_rowActions.Any(static a => a.Kind == RowActionKind.Event) && _rowKey is null)
         {
@@ -257,6 +296,9 @@ public sealed class JsonGridOptionsBuilder
             EmptyMessage = _emptyMessage,
             EnableRowSelection = _enableRowSelection,
             RowKey = _rowKey,
+            RowSelectable = _rowSelectable,
+            SelectionScope = _selectionScope,
+            BulkActions = _bulkActions.ToArray(),
             RowLink = _rowLink,
             RowLinkTarget = _rowLinkTarget,
             RowEvent = _rowEvent,

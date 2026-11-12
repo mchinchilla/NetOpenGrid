@@ -39,6 +39,7 @@ Sin virtual DOM. Sin reflexión en el hot path. Sin compilar expresiones por req
 - [Filtros tipo Excel (conteo por valor)](#-filtros-tipo-excel-conteo-por-valor)
 - [Columnas fijadas, reordenables, redimensionables y ocultables](#-columnas-fijadas-reordenables-redimensionables-y-ocultables)
 - [Fila clicable y acciones por fila](#️-fila-clicable-y-acciones-por-fila)
+- [Acciones masivas](#️-acciones-masivas)
 - [Export server-side (CSV y Excel)](#-export-server-side-csv-y-excel)
 - [i18n](#-i18n)
 - [Agrupamiento por columna (anidado)](#-agrupamiento-por-columna-anidado)
@@ -95,6 +96,7 @@ flowchart LR
 | ➕ **Agregados** | SUM · AVG · MIN · MAX | Totales arriba/abajo y subtotales por grupo, sobre todo el conjunto filtrado; push-down a SQL |
 | 📄 **Paginación** | Server-side | Clamp de `pageSize`, meta por headers, deep-linking total |
 | ☑️ **Selección** | Filas + export | Barra flotante, select-all, CSV de selección o del dataset filtrado completo |
+| | Acciones masivas | `AddBulkAction` + `RowSelectable`: botones propios en la barra que avisan a tu página (`netgrid:bulk-action`) |
 | 📌 **Columnas** | Pin + reorder | Sticky con offsets calculados, drag & drop persistido en `localStorage` |
 | 🌐 **i18n** | Presets EN/ES | ~39 claves, override por clave, blob `__NETGRID__.locale` para el cliente |
 | 🎨 **Temas** | Tailwind v4 | Presets `grid`/`midnight`, dark mode persistido, escaneo de clases en C# |
@@ -689,6 +691,125 @@ Como el tema solo compila las clases que emite el renderer, los temas traen **bl
 
 ---
 
+## ☑️ Acciones masivas
+
+Botones propios en la barra flotante de la selección. La librería **no ejecuta nada**: cada botón solo avisa a tu
+página con las claves de las filas marcadas, y tu página decide (confirmar, llamar a tu API, mostrar errores).
+
+```csharp
+.EnableRowSelection(e => e.Id.ToString("D"))
+.RowSelectable(e => e.Status is "draft" or "posted")
+.AddBulkAction("post", a => a
+    .Label("Contabilizar seleccionados")
+    .Icon("fas fa-check-double")
+    .Tone(BulkActionTone.Primary)
+    .When(e => e.Status == "draft"))
+.AddBulkAction("approve", a => a
+    .Label("Aprobar seleccionados")
+    .Tone(BulkActionTone.Success)
+    .When(e => e.Status == "posted"))
+```
+
+- **`AddBulkAction(name, a => ...)`**: un botón en la barra, antes de exportar, en el orden en que se declaran.
+  Necesita `EnableRowSelection`. `name` admite letras, dígitos, `-` y `_`.
+  - `.Label(text)`: texto del botón; pasa por `TextLocalizer`. Sin él se usa `name`.
+  - `.Icon(cssClass)`: se emite tal cual como `<i class="...">`. La fuente de iconos la pone tu app (`WithStylesheet`).
+  - `.Tone(...)`: `Primary` (por defecto) · `Success` · `Danger` · `Neutral`.
+  - `.Confirm()`: el grid pregunta con el `confirm` del navegador antes de avisar. Apagado por defecto: lo normal es
+    que confirme tu página con su propio diálogo.
+  - `.When(fila => bool)`: filas a las que aplica la acción. Cada `<tr>` lleva `data-bulk="post approve"` con las que
+    admite, y el botón solo se habilita cuando **todas** las filas marcadas la admiten (si no, queda deshabilitado
+    con un `title` que lo explica).
+- **`RowSelectable(fila => bool)`**: una fila que no cumple se dibuja con el checkbox deshabilitado (y un `title`),
+  y "seleccionar todo" la salta. No lleva `data-id`, así que nunca aparece en los eventos.
+
+### Eventos que salen del grid
+
+Se disparan en la raíz del grid con `bubbles` (llegan hasta `document`). Dentro de un iframe, el mismo payload va
+además con `postMessage` al padre, con `{ type, ...detail }`.
+
+| Evento | `detail` | Cuándo |
+|---|---|---|
+| `netgrid:bulk-action` | `{ grid, action, keys, count }` | Clic en un botón de la barra |
+| `netgrid:selection` | `{ grid, keys, count }` | Cada vez que cambia la selección: marcar o desmarcar una fila, "seleccionar todo", limpiar, y (con alcance `Page`) el vaciado al cambiar de página, orden, filtros o búsqueda |
+| `netgrid:action` | `{ grid, action, key }` | Acción `Event` de una fila (ya existía) |
+
+### Mensajes que acepta el grid
+
+Como evento DOM en el `document` del grid (`document.dispatchEvent(new CustomEvent(type, { detail }))`) o con
+`postMessage` desde el padre. Sin `grid`, el mensaje vale para todos los grids del documento.
+
+| Mensaje | Datos | Qué pasa con la selección |
+|---|---|---|
+| `netgrid:clear-selection` | `{ grid }` | Se vacía (y se dispara `netgrid:selection` con `count: 0`) |
+| `netgrid:busy` | `{ grid, busy: true \| false }` | No se toca. Mientras `busy`, toda la barra queda deshabilitada (acciones, exportar y limpiar) |
+| `netgrid:refresh` | `{ grid, keepSelection? }` | Se conserva, quitando las claves que estaban a la vista y ya no están en las filas nuevas (borradas, o que dejaron de ser seleccionables). Con `keepSelection: false` se vacía |
+
+Mientras tu página trabaja, la barra **no** se bloquea sola: pide `busy: true` si lo necesitas.
+
+### Alcance de la selección
+
+```csharp
+.EnableRowSelection(e => e.Id.ToString("D"))
+.WithSelectionScope(GridSelectionScope.Page)   // por defecto: GridSelectionScope.All
+```
+
+- **`All` (por defecto)**: la selección se mantiene al cambiar de página, orden, filtros o búsqueda, y la barra
+  cuenta todo lo marcado. Los eventos pueden traer claves de filas que **no están a la vista**.
+  - Los botones con `When` siguen funcionando: el grid recuerda qué acciones admitía cada fila cuando estuvo en
+    pantalla. Si el estado de una fila cambia mientras está fuera de vista, ese dato se actualiza cuando vuelve a verse.
+  - Un `netgrid:refresh` solo puede descartar las claves de la página visible. Una fila borrada en otra página
+    sigue en la selección hasta que envíes `netgrid:clear-selection`: tu endpoint debe tolerar claves que ya no existen.
+- **`Page`**: la selección cubre solo la página que se ve. Al cambiar de página, tamaño de página, orden, filtros,
+  búsqueda o agrupamiento se vacía, así que un evento **nunca mezcla claves de varias páginas**. Si la consulta no
+  cambia (un refresh, mover u ocultar una columna, plegar un grupo), se mantiene y se descartan las claves cuya
+  fila ya no está.
+- Con scroll virtual las filas se cargan por bloques y la selección nunca se poda al hacer scroll; con `Page` se
+  vacía al cambiar orden, filtros o búsqueda.
+
+### Seguridad
+
+- Ningún `postMessage` se envía a `'*'`: el destino es siempre el origen del propio grid, así que un padre de otro
+  origen no recibe nada.
+- Los mensajes entrantes de otro origen se descartan sin leerlos.
+- Las claves viajan como texto, tal como las devuelve el selector de `EnableRowSelection`. El grid no las guarda
+  fuera de la página ni envía nada al servidor: la acción la ejecuta tu página.
+
+### Ejemplo con el grid en un iframe
+
+```html
+<iframe data-netgrid src="/netgrid/entries?embed=1" title="Journal entries"></iframe>
+
+<script>
+    const frame = document.querySelector("iframe[data-netgrid]");
+    const send = (type, grid, extra) =>
+        frame.contentWindow.postMessage({ type, grid, ...extra }, location.origin);
+
+    window.addEventListener("message", async (e) => {
+        if (e.origin !== location.origin || e.data?.type !== "netgrid:bulk-action") return;
+        const { grid, action, keys, count } = e.data;   // action: "post" | "approve"
+        if (!confirm(`${action}: ${count}?`)) return;
+
+        send("netgrid:busy", grid, { busy: true });
+        try {
+            await fetch(`/accounting/journal-entries/bulk-${action}`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ ids: keys }),
+            });
+        } finally {
+            send("netgrid:busy", grid, { busy: false });
+            send("netgrid:clear-selection", grid);
+            send("netgrid:refresh", grid);
+        }
+    });
+</script>
+```
+
+Ejemplo completo y ejecutable: `samples/NetOpenGrid.Example` (`Program.cs` y `Pages/Index.cshtml`).
+
+---
+
 ## 📤 Export server-side (CSV y Excel)
 
 `GET /netgrid/:id/export?<contexto>` descarga el **dataset completo** (todas las páginas) con el
@@ -903,6 +1024,9 @@ bloques mientras bajas, y en el DOM solo quedan los bloques cerca de lo que ves.
 | `.WithGroupPanel(bool)` | `true` | Panel para agrupar arrastrando encabezados |
 | `.WithAggregateRows(rows)` | `Footer \| GroupHeader` | Filas donde se muestran los agregados |
 | `.EnableRowSelection(keyFn)` | off | Barra flotante + export; `keyFn` debe ser estable y único |
+| `.WithSelectionScope(scope)` | `All` | `All`: la selección sobrevive a página, orden y filtros · `Page`: solo las filas visibles |
+| `.RowSelectable(fn)` | todas | Filas que se pueden seleccionar; el resto lleva el checkbox deshabilitado |
+| `.AddBulkAction(name, a => ...)` | — | Botón en la barra de selección: `.Label` · `.Icon` · `.Tone` · `.Confirm` · `.When` |
 | `.WithRowKey(keyFn)` | — | Clave de fila sin activar la selección (la usan las acciones `Event`) |
 | `.WithRowLink(hrefFn, target?)` | — | Toda la fila es clicable |
 | `.WithRowEvent(name)` | — | El clic en la fila dispara `netgrid:action` (excluye `WithRowLink`) |
@@ -1186,6 +1310,7 @@ dotnet test
 - [x] Panel de agrupamiento sin borde: una banda tenue en reposo y el anillo de marca solo mientras se arrastra una columna (1.2.5)
 - [x] Fila que dispara un evento en vez de navegar: `WithRowEvent` (1.2.6)
 - [x] Detalle expandible por fila, cargado bajo demanda y en caché: `WithRowDetail` + bloques `ng-detail-*` en los temas (1.2.7)
+- [x] Acciones masivas sobre la selección: `AddBulkAction` · `RowSelectable`, eventos `netgrid:bulk-action` y `netgrid:selection`, mensajes `netgrid:clear-selection` · `netgrid:busy` · `netgrid:refresh`. `WithSelectionScope(Page)` limita la selección a las filas visibles (1.4.3)
 
 ### 🧪 Calidad
 

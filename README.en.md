@@ -39,6 +39,7 @@ No virtual DOM. No reflection on the hot path. No per-request expression compila
 - [Excel-style filters (per-value counts)](#-excel-style-filters-per-value-counts)
 - [Pinned, reorderable, resizable & hideable columns](#-pinned-reorderable-resizable--hideable-columns)
 - [Clickable rows & row actions](#️-clickable-rows--row-actions)
+- [Bulk actions](#️-bulk-actions)
 - [Server-side export (CSV & Excel)](#-server-side-export-csv--excel)
 - [i18n](#-i18n)
 - [Column grouping (nested)](#-column-grouping-nested)
@@ -95,6 +96,7 @@ flowchart LR
 | ➕ **Aggregates** | SUM · AVG · MIN · MAX | Top/bottom totals and per-group subtotals over the whole filtered set; pushed down to SQL |
 | 📄 **Paging** | Server-side | `pageSize` clamping, meta via headers, full deep-linking |
 | ☑️ **Selection** | Rows + export | Floating bar, select-all, CSV of selection or the full filtered dataset |
+| | Bulk actions | `AddBulkAction` + `RowSelectable`: your own buttons in the bar, which notify your page (`netgrid:bulk-action`) |
 | 📌 **Columns** | Pin + reorder | Sticky with JS-computed offsets, drag & drop persisted in `localStorage` |
 | 🌐 **i18n** | EN/ES presets | ~39 keys, per-key overrides, `__NETGRID__.locale` blob for the client |
 | 🎨 **Theming** | Tailwind v4 | `grid`/`midnight` presets, persisted dark mode, class scanning inside C# |
@@ -689,6 +691,124 @@ Since a theme only compiles the classes the renderer emits, the themes ship **bu
 
 ---
 
+## ☑️ Bulk actions
+
+Your own buttons in the floating selection bar. The library **runs nothing**: each button only tells your page
+which rows are selected, and your page decides what to do (confirm, call your API, show errors).
+
+```csharp
+.EnableRowSelection(e => e.Id.ToString("D"))
+.RowSelectable(e => e.Status is "draft" or "posted")
+.AddBulkAction("post", a => a
+    .Label("Contabilizar seleccionados")
+    .Icon("fas fa-check-double")
+    .Tone(BulkActionTone.Primary)
+    .When(e => e.Status == "draft"))
+.AddBulkAction("approve", a => a
+    .Label("Aprobar seleccionados")
+    .Tone(BulkActionTone.Success)
+    .When(e => e.Status == "posted"))
+```
+
+- **`AddBulkAction(name, a => ...)`**: one button in the bar, before the export, in declaration order.
+  Needs `EnableRowSelection`. `name` takes letters, digits, `-` and `_`.
+  - `.Label(text)`: button text; goes through `TextLocalizer`. Defaults to `name`.
+  - `.Icon(cssClass)`: emitted as written, as `<i class="...">`. The icon font is your app's (`WithStylesheet`).
+  - `.Tone(...)`: `Primary` (default) · `Success` · `Danger` · `Neutral`.
+  - `.Confirm()`: the grid asks with the browser's `confirm` before raising the event. Off by default: normally
+    your page confirms with its own dialog.
+  - `.When(row => bool)`: rows the action applies to. Each `<tr>` carries `data-bulk="post approve"` with the ones
+    it admits, and the button is enabled only while **every** selected row admits it (otherwise it is disabled,
+    with a `title` that says why).
+- **`RowSelectable(row => bool)`**: a row that fails it renders a disabled checkbox (with a `title`) and
+  "select all" skips it. It carries no `data-id`, so it never shows up in the events.
+
+### Events the grid raises
+
+Raised on the grid root with `bubbles` (they reach `document`). Inside an iframe the same payload also goes to
+the parent through `postMessage`, as `{ type, ...detail }`.
+
+| Event | `detail` | When |
+|---|---|---|
+| `netgrid:bulk-action` | `{ grid, action, keys, count }` | A button of the bar is clicked |
+| `netgrid:selection` | `{ grid, keys, count }` | Every time the selection changes: ticking or unticking a row, "select all", clear, and (with the `Page` scope) the emptying on a change of page, sort, filters or search |
+| `netgrid:action` | `{ grid, action, key }` | A row's `Event` action (already existed) |
+
+### Messages the grid accepts
+
+As a DOM event on the grid's `document` (`document.dispatchEvent(new CustomEvent(type, { detail }))`) or through
+`postMessage` from the parent. Without `grid`, the message applies to every grid in the document.
+
+| Message | Data | What happens to the selection |
+|---|---|---|
+| `netgrid:clear-selection` | `{ grid }` | Emptied (and `netgrid:selection` fires with `count: 0`) |
+| `netgrid:busy` | `{ grid, busy: true \| false }` | Untouched. While `busy`, the whole bar is disabled (actions, export and clear) |
+| `netgrid:refresh` | `{ grid, keepSelection? }` | Kept, minus the keys that were on screen and are no longer in the new rows (deleted, or no longer selectable). `keepSelection: false` empties it |
+
+The bar does **not** lock itself while your page works: send `busy: true` if you need that.
+
+### Selection scope
+
+```csharp
+.EnableRowSelection(e => e.Id.ToString("D"))
+.WithSelectionScope(GridSelectionScope.Page)   // default: GridSelectionScope.All
+```
+
+- **`All` (default)**: the selection survives a change of page, sort, filters or search, and the bar counts
+  everything ticked. Events can carry keys of rows that are **not on screen**.
+  - Buttons with `When` keep working: the grid remembers which actions each row admitted while it was on screen.
+    If a row's state changes while it is out of view, that is updated when the row shows up again.
+  - A `netgrid:refresh` can only drop keys of the visible page. A row deleted on another page stays selected
+    until you send `netgrid:clear-selection`: your endpoint must tolerate keys that no longer exist.
+- **`Page`**: the selection only covers the page on screen. Changing page, page size, sort, filters, search or
+  grouping empties it, so an event **never mixes keys from several pages**. When the query stays the same (a
+  refresh, moving or hiding a column, collapsing a group) it stays, and keys whose row is gone are dropped.
+- With virtual scroll rows load in blocks and scrolling never prunes the selection; with `Page`, changing sort,
+  filters or search still empties it.
+
+### Security
+
+- No `postMessage` is ever sent to `'*'`: the target is always the grid's own origin, so a parent from another
+  origin receives nothing.
+- Incoming messages from another origin are dropped unread.
+- Keys travel as text, exactly as the `EnableRowSelection` selector returns them. The grid does not keep them
+  outside the page and sends nothing to the server: your page runs the action.
+
+### Example with the grid in an iframe
+
+```html
+<iframe data-netgrid src="/netgrid/entries?embed=1" title="Journal entries"></iframe>
+
+<script>
+    const frame = document.querySelector("iframe[data-netgrid]");
+    const send = (type, grid, extra) =>
+        frame.contentWindow.postMessage({ type, grid, ...extra }, location.origin);
+
+    window.addEventListener("message", async (e) => {
+        if (e.origin !== location.origin || e.data?.type !== "netgrid:bulk-action") return;
+        const { grid, action, keys, count } = e.data;   // action: "post" | "approve"
+        if (!confirm(`${action}: ${count}?`)) return;
+
+        send("netgrid:busy", grid, { busy: true });
+        try {
+            await fetch(`/accounting/journal-entries/bulk-${action}`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ ids: keys }),
+            });
+        } finally {
+            send("netgrid:busy", grid, { busy: false });
+            send("netgrid:clear-selection", grid);
+            send("netgrid:refresh", grid);
+        }
+    });
+</script>
+```
+
+Full runnable example: `samples/NetOpenGrid.Example` (`Program.cs` and `Pages/Index.cshtml`).
+
+---
+
 ## 📤 Server-side export (CSV & Excel)
 
 `GET /netgrid/:id/export?<context>` downloads the **full dataset** (all pages) with the current
@@ -902,6 +1022,9 @@ you scroll down, and only the blocks near the viewport stay in the DOM.
 | `.WithGroupPanel(bool)` | `true` | Panel to group by dragging headers |
 | `.WithAggregateRows(rows)` | `Footer \| GroupHeader` | Rows that show the aggregates |
 | `.EnableRowSelection(keyFn)` | off | Floating bar + export; `keyFn` must be stable and unique |
+| `.WithSelectionScope(scope)` | `All` | `All`: the selection survives paging, sorting and filtering · `Page`: visible rows only |
+| `.RowSelectable(fn)` | all | Rows that can be selected; the others get a disabled checkbox |
+| `.AddBulkAction(name, a => ...)` | — | Button in the selection bar: `.Label` · `.Icon` · `.Tone` · `.Confirm` · `.When` |
 | `.WithRowKey(keyFn)` | — | Row key without turning selection on (used by `Event` actions) |
 | `.WithRowLink(hrefFn, target?)` | — | The whole row is clickable |
 | `.WithRowEvent(name)` | — | Clicking the row raises `netgrid:action` (excludes `WithRowLink`) |
@@ -1185,6 +1308,7 @@ dotnet test
 - [x] Borderless group panel: a faint band at rest and the brand ring only while a column is dragged over it (1.2.5)
 - [x] Rows that raise an event instead of navigating: `WithRowEvent` (1.2.6)
 - [x] Expandable row detail, loaded on demand and cached: `WithRowDetail` + `ng-detail-*` blocks in the themes (1.2.7)
+- [x] Bulk actions on the selection: `AddBulkAction` · `RowSelectable`, events `netgrid:bulk-action` and `netgrid:selection`, messages `netgrid:clear-selection` · `netgrid:busy` · `netgrid:refresh`. `WithSelectionScope(Page)` limits the selection to the visible rows (1.4.3)
 
 ### 🧪 Quality
 

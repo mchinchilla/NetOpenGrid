@@ -71,6 +71,21 @@ public sealed class GridOptions<T>
     public bool EnableRowSelection { get; init; }
     public Func<T, string?>? RowKey { get; init; }
 
+    /// <summary>Whether the selection survives a change of page, sort, filters or search (default: it does).</summary>
+    public GridSelectionScope SelectionScope { get; init; } = GridSelectionScope.All;
+
+    /// <summary>
+    /// Rows the user may select; null means every row. A row that fails it renders a disabled
+    /// checkbox and is skipped by "select all".
+    /// </summary>
+    public Func<T, bool>? RowSelectable { get; init; }
+
+    /// <summary>
+    /// Host-defined buttons in the selection bar. Each one raises <c>netgrid:bulk-action</c> with the
+    /// selected keys; nothing runs on the server.
+    /// </summary>
+    public IReadOnlyList<GridBulkAction<T>> BulkActions { get; init; } = [];
+
     /// <summary>Whole-row link: clicking the row (outside its controls) navigates here.</summary>
     public Func<T, string?>? RowLink { get; init; }
 

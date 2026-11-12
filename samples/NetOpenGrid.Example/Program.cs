@@ -68,6 +68,18 @@ builder.Services.AddNetOpenGrid(
         .WithDebounce(250)
         .WithMinHeight("")
         .EnableRowSelection(p => p.Sku)
+        // Rows without stock cannot be picked; each bulk action only applies to some rows, so its
+        // button is enabled while every selected row admits it. The buttons only raise
+        // netgrid:bulk-action: the host page does the work (see Pages/Index.cshtml).
+        .RowSelectable(p => p.Stock > 0)
+        .AddBulkAction("discount", a => a
+            .Label("Discount selected")
+            .Tone(BulkActionTone.Primary)
+            .When(p => p.Available))
+        .AddBulkAction("relist", a => a
+            .Label("Relist selected")
+            .Tone(BulkActionTone.Success)
+            .When(p => !p.Available))
         // Totals under the table, subtotals in each group header (visible while collapsed)
         // and after each expanded group. Computed over every filtered row, not just the page.
         .WithAggregateRows(GridAggregateRows.Footer | GridAggregateRows.GroupHeader | GridAggregateRows.GroupFooter)

@@ -24,6 +24,27 @@
    A real app would call its API here, then ask the grid for fresh rows. *@
 <script>
     const toast = document.querySelector(".toast");
+    // Bulk actions arrive the same way, with the keys of the selected rows. The host confirms, calls
+    // its own API (a timer stands in for it here), and then tells the grid it is done.
+    window.addEventListener("message", (e) => {
+        if (e.origin !== location.origin || e.data?.type !== "netgrid:bulk-action") return;
+        const { grid, action, keys, count } = e.data;
+        if (!confirm(`${action}: ${count} product(s)?`)) return;
+
+        const frame = document.querySelector("iframe[data-netgrid]");
+        const send = (type, extra) => frame.contentWindow.postMessage({ type, grid, ...extra }, location.origin);
+        send("netgrid:busy", { busy: true });
+        setTimeout(() => {
+            toast.textContent = `${action}: ${keys.join(", ")} (demo: nothing was changed)`;
+            toast.hidden = false;
+            clearTimeout(toast.timer);
+            toast.timer = setTimeout(() => { toast.hidden = true; }, 3000);
+            send("netgrid:busy", { busy: false });
+            send("netgrid:clear-selection");
+            send("netgrid:refresh");
+        }, 800);
+    });
+
     window.addEventListener("message", (e) => {
         if (e.origin !== location.origin || e.data?.type !== "netgrid:action") return;
         toast.textContent = `${e.data.action} ${e.data.key} (demo: nothing was changed)`;

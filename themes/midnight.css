@@ -3,6 +3,8 @@
 @import "./shared/brand-and-badges.css";
 /* Expandable row detail: expander chrome plus the building blocks for detail fragments. */
 @import "./shared/row-detail.css";
+/* Bulk action buttons of the selection bar. */
+@import "./shared/bulk-actions.css";
 
 @custom-variant dark (&:where(.dark, .dark *));
 

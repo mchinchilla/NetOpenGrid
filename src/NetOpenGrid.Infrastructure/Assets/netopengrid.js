@@ -35,6 +35,9 @@
     'range.formatCapped': '{from}-{to} of more than {total}',
     'select.selected.one': '1 selected',
     'select.selected.many': '{n} selected',
+    'bulk.unavailable': 'Not available for some of the selected rows',
+    'bulk.confirm.one': '{action}: apply to the selected row?',
+    'bulk.confirm.many': '{action}: apply to the {n} selected rows?',
     'chips.anyOf': 'any of {values}',
     'chips.anyOfMore': 'any of {values} +{n}',
     'filter.values.truncated': 'Showing {shown} of {total} values',
@@ -159,6 +162,31 @@
     if (ds.cache.size > DETAIL_CACHE) ds.cache.delete(ds.cache.keys().next().value);
   };
 
+  // Row selection bookkeeping per grid, outside Alpine: the last selection announced to the host
+  // (netgrid:selection fires on real changes only), the query on screen, the keys that were on
+  // screen after the last swap, whether the host asked for the rows being loaded, and the bulk
+  // actions each selected row admits (kept for rows that are no longer in the DOM: another page,
+  // or a block a virtual scroll has dropped).
+  const selectionStore = new Map();
+  const selectionState = (id) => {
+    let sel = selectionStore.get(id);
+    if (!sel) {
+      sel = { announced: '[]', query: null, visible: new Set(), hostRefresh: false, bulk: new Map() };
+      selectionStore.set(id, sel);
+    }
+    return sel;
+  };
+
+  // What decides which rows are on screen: page, page size, sort, filters, search, grouping.
+  // A page-scoped selection (WithSelectionScope(Page)) is emptied when this changes.
+  const selectionQuery = (state) => JSON.stringify([
+    state.isVirtual?.() ? 1 : state.page, state.pageSize, state.sorts, state.filters, state.q, state.groupBy
+  ]);
+
+  // Messages the host page may send, as a DOM event on this document or (from a same-origin
+  // parent, when the grid lives in an iframe) through postMessage.
+  const HOST_EVENTS = ['netgrid:refresh', 'netgrid:clear-selection', 'netgrid:busy'];
+
   // requestAnimationFrame never fires in a hidden tab (a grid opened in the background, a test
   // runner): run on the next frame or after 50 ms, whichever comes first, and only once.
   const nextFrame = (fn) => {
@@ -222,6 +250,7 @@
       if (state.isVirtual?.()) state.virtualReset(body);
       else state.restoreDetails(true);
       state.syncRoving(refocus);
+      state.afterRowsSwap();
     } catch (error) {
       if (error?.name !== 'AbortError') console.error('[netgrid] row fetch failed:', error);
     } finally {
@@ -242,6 +271,9 @@
       sorts: [],
       filters: {},
       selected: [],
+      selectionScope: 'all',
+      bulkBusy: false,
+      bulkAllowed: null,
       meta: { total: 0, page: 1, pageSize: 25, pages: 1 },
       loading: false,
       cursorRow: 0,
@@ -362,6 +394,10 @@
         this.loadUserViews();
         this.loadHiddenColumns();
         this.seedFromUrl();
+        this.selectionScope = this.$el.dataset.selectionScope === 'page' ? 'page' : 'all';
+        selectionState(id).query = selectionQuery(this);
+        selectionState(id).visible = new Set(this.currentPageIds());
+        this.$watch('selected', () => this.syncSelection());
         this.applyHeaderVisibility();
         this.loadPinnedState();
         this.applyPinStateAll();
@@ -399,15 +435,38 @@
           this.groupDropActive = false;
         });
 
-        // An explicit refresh means the data changed: cached details are dropped (open ones refetch).
-        const refreshIfMine = (grid) => {
-          if (grid && grid !== this.id) return;
-          detailStore.get(this.id)?.cache.clear();
-          this.refresh();
+        // What the host page may ask for (see HOST_EVENTS). A message without `grid` goes to every
+        // grid in this document.
+        //   netgrid:refresh          fresh rows. The selection stays, minus the keys that were on screen
+        //                            and are no longer in the rows; { keepSelection: false } empties it
+        //                            instead. An explicit refresh means the data changed: cached details
+        //                            are dropped too.
+        //   netgrid:clear-selection  empties the selection.
+        //   netgrid:busy             { busy: true|false } disables the selection bar while the host
+        //                            works; the selection itself is left alone.
+        const onHostMessage = (type, data) => {
+          if (data?.grid && data.grid !== this.id) return;
+          if (type === 'netgrid:refresh') {
+            if (data?.keepSelection === false) this.clearSelection();
+            detailStore.get(this.id)?.cache.clear();
+            const sel = selectionState(this.id);
+            sel.hostRefresh = true;
+            this.refresh().finally(() => {
+              sel.hostRefresh = false;
+            });
+          } else if (type === 'netgrid:clear-selection') {
+            this.clearSelection();
+          } else if (type === 'netgrid:busy') {
+            this.bulkBusy = data?.busy === true;
+          }
         };
-        document.addEventListener('netgrid:refresh', (e) => refreshIfMine(e.detail?.grid));
+        for (const type of HOST_EVENTS) {
+          document.addEventListener(type, (e) => onHostMessage(type, e.detail));
+        }
+        // Only a same-origin window is listened to: anything else is dropped unread.
         window.addEventListener('message', (e) => {
-          if (e.origin === window.location.origin && e.data?.type === 'netgrid:refresh') refreshIfMine(e.data.grid);
+          if (e.origin !== window.location.origin) return;
+          if (HOST_EVENTS.includes(e.data?.type)) onHostMessage(e.data.type, e.data);
         });
         nextFrame(() => this.applyPinnedOffsets());
 
@@ -1359,18 +1418,50 @@
         else window.location.assign(href);
       },
 
-      // Raises netgrid:action for the host page. Inside an iframe the same payload goes to the
-      // parent window too, but only to a parent of the same origin.
-      rowAction(action, key) {
-        const detail = { grid: this.id, action, key };
-        this.root().dispatchEvent(new CustomEvent('netgrid:action', { bubbles: true, detail }));
+      // Raises an event for the host page on the grid root (it bubbles up to document). Inside an
+      // iframe the same payload goes to the parent window too, but only to a parent of the same
+      // origin: the target origin is always this document's, never '*'.
+      notifyHost(type, detail) {
+        this.root().dispatchEvent(new CustomEvent(type, { bubbles: true, detail }));
         if (window.parent !== window) {
           try {
-            window.parent.postMessage({ type: 'netgrid:action', ...detail }, window.location.origin);
+            window.parent.postMessage({ type, ...detail }, window.location.origin);
           } catch {
             /* cross-origin parent: nothing is sent */
           }
         }
+      },
+
+      rowAction(action, key) {
+        this.notifyHost('netgrid:action', { grid: this.id, action, key });
+      },
+
+      // A bulk action only tells the host which keys are selected; the grid runs nothing.
+      bulkAction(action, button) {
+        if (this.bulkDisabled(action)) return;
+        const keys = [...this.selected];
+        if (button?.dataset.confirm !== undefined) {
+          const text = L(keys.length === 1 ? 'bulk.confirm.one' : 'bulk.confirm.many', {
+            action: button.dataset.label || action,
+            n: keys.length
+          });
+          if (!window.confirm(text)) return;
+        }
+        this.notifyHost('netgrid:bulk-action', { grid: this.id, action, keys, count: keys.length });
+      },
+
+      // Disabled while the host is busy, and while a selected row does not admit the action
+      // (rows list what they admit in data-bulk when some action is conditional).
+      bulkDisabled(action) {
+        return this.bulkBusy || this.selected.length === 0 || !this.bulkAdmits(action);
+      },
+
+      bulkAdmits(action) {
+        return this.bulkAllowed === null || this.bulkAllowed.includes(action);
+      },
+
+      bulkHint(action) {
+        return this.selected.length > 0 && !this.bulkAdmits(action) ? L('bulk.unavailable') : null;
       },
 
       // ---- Row detail ----------------------------------------------------------------------------
@@ -2011,13 +2102,68 @@
         }
       },
 
-      pruneSelection() {
-        const live = new Set(this.currentPageIds());
-        this.selected = this.selected.filter((key) => live.has(key));
+      // Drops the selected keys for which gone(key) holds.
+      pruneSelection(gone) {
+        if (this.selected.some(gone)) this.selected = this.selected.filter((key) => !gone(key));
       },
 
       clearSelection() {
-        this.selected = [];
+        if (this.selected.length > 0) this.selected = [];
+      },
+
+      // Runs after every /rows swap.
+      //   scope 'all' (default): the selection survives paging, sorting, filtering and searching. Only
+      //     a refresh the host asked for prunes it, and only the keys that were on screen and are no
+      //     longer there (deleted, or no longer selectable); keys of other pages cannot be checked.
+      //   scope 'page': the selection belongs to the rows on screen. Another page, page size, sort,
+      //     filter, search or grouping empties it; the same query with fresh rows (a refresh, a column
+      //     moved or hidden, a group collapsed) keeps it, minus the keys that are gone.
+      // Virtual scroll loads the rows of one query in blocks, so there nothing is pruned.
+      afterRowsSwap() {
+        const sel = selectionState(this.id);
+        const query = selectionQuery(this);
+        const live = new Set(this.currentPageIds());
+        const sameQuery = query === sel.query;
+        sel.query = query;
+
+        if (this.selectionScope === 'page') {
+          if (!sameQuery) this.clearSelection();
+          else if (!this.isVirtual()) this.pruneSelection((key) => !live.has(key));
+        } else if (sameQuery && sel.hostRefresh && !this.isVirtual()) {
+          const wasVisible = sel.visible;
+          this.pruneSelection((key) => wasVisible.has(key) && !live.has(key));
+        }
+
+        sel.visible = live;
+        this.syncSelection();
+      },
+
+      // Recomputes which bulk actions every selected row admits and, when the selection really
+      // changed, raises netgrid:selection with { grid, keys, count }.
+      syncSelection() {
+        const sel = selectionState(this.id);
+        const body = document.getElementById(`${this.id}-body`);
+        const rows = new Map();
+        for (const row of body?.querySelectorAll('tr[data-id]') ?? []) rows.set(row.dataset.id, row.dataset.bulk);
+
+        const keys = [...this.selected];
+        const bulk = new Map();
+        let allowed = null;
+        for (const key of keys) {
+          const admitted = rows.has(key) ? rows.get(key) : sel.bulk.get(key);
+          bulk.set(key, admitted);
+          if (admitted === undefined) continue;
+          const names = admitted.split(' ').filter(Boolean);
+          allowed = allowed === null ? names : allowed.filter((name) => names.includes(name));
+        }
+        sel.bulk = bulk;
+        this.bulkAllowed = allowed;
+
+        const announced = JSON.stringify(keys);
+        if (announced !== sel.announced) {
+          sel.announced = announced;
+          this.notifyHost('netgrid:selection', { grid: this.id, keys, count: keys.length });
+        }
       },
 
       toggleTheme() {

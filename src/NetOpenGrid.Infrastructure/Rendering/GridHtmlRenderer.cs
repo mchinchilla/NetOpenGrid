@@ -62,6 +62,7 @@ public sealed class GridHtmlRenderer<TItem>
     private readonly NetOpenGridLocalizationOptions _locale;
     private readonly IReadOnlyList<GridColumn<TItem>> _visibleColumns;
     private readonly ObjectPool<StringBuilder> _stringBuilderPool;
+    private readonly bool _hasConditionalBulkActions;
 
     public GridHtmlRenderer(GridOptions<TItem> options, NetOpenGridAssetOptions assetOptions, NetOpenGridLocalizationOptions? localizationOptions = null)
     {
@@ -71,6 +72,7 @@ public sealed class GridHtmlRenderer<TItem>
         _assetOptions = assetOptions;
         _locale = localizationOptions ?? new NetOpenGridLocalizationOptions();
         _visibleColumns = options.DisplayColumns;
+        _hasConditionalBulkActions = options.BulkActions.Any(static a => a.When is not null);
         _stringBuilderPool = new DefaultObjectPoolProvider()
             .CreateStringBuilderPool(initialCapacity: 4096, maximumRetainedCapacity: 256 * 1024);
     }
@@ -648,7 +650,15 @@ public sealed class GridHtmlRenderer<TItem>
         AppendEncoded(w, _options.Id);
         w.Write("\" x-data=\"netgrid(");
         AppendJsQuoted(w, _options.Id);
-        w.Write(")\" class=\"space-y-4\">");
+        w.Write(")\" class=\"space-y-4\"");
+
+        // The client keeps the selection across pages unless the grid asks for a page-only one.
+        if (_options.EnableRowSelection && _options.SelectionScope == GridSelectionScope.Page)
+        {
+            w.Write(" data-selection-scope=\"page\"");
+        }
+
+        w.Write('>');
 
         AppendToolbar(w);
         AppendFilterChips(w);
@@ -1316,15 +1326,50 @@ public sealed class GridHtmlRenderer<TItem>
         w.Write("<div x-show=\"selected.length > 0\" x-cloak x-transition ");
         w.Write("class=\"fixed bottom-6 left-1/2 z-40 flex -translate-x-1/2 items-center gap-4 rounded-full bg-neutral-900 px-5 py-2.5 text-white shadow-lg dark:bg-white dark:text-neutral-900\">");
         w.Write("<span class=\"text-sm font-medium\" x-text=\"selectedLabel\"></span>");
+
+        // Host-defined bulk actions: each button only raises netgrid:bulk-action with the keys.
+        foreach (var action in _options.BulkActions)
+        {
+            w.Write("<button type=\"button\" class=\"btn-bulk ");
+            w.Write(action.Tone switch
+            {
+                BulkActionTone.Success => "btn-bulk-success",
+                BulkActionTone.Danger => "btn-bulk-danger",
+                BulkActionTone.Neutral => "btn-bulk-neutral",
+                _ => "btn-bulk-primary",
+            });
+            w.Write("\" data-bulk-action=\"");
+            w.Write(action.Name);
+            w.Write("\" data-label=\"");
+            AppendEncoded(w, T(action.Label));
+            w.Write(action.Confirm ? "\" data-confirm :disabled=\"bulkDisabled('" : "\" :disabled=\"bulkDisabled('");
+            w.Write(action.Name);
+            w.Write("')\" :title=\"bulkHint('");
+            w.Write(action.Name);
+            w.Write("')\" @click=\"bulkAction('");
+            w.Write(action.Name);
+            w.Write("', $el)\">");
+            if (action.Icon is { } icon)
+            {
+                w.Write("<i class=\"");
+                AppendEncoded(w, icon);
+                w.Write("\" aria-hidden=\"true\"></i>");
+            }
+
+            w.Write("<span>");
+            AppendEncoded(w, T(action.Label));
+            w.Write("</span></button>");
+        }
+
         w.Write("<form method=\"post\" :action=\"");
         AppendJsQuoted(w, _assetOptions.RoutePrefix);
         w.Write(" + '/' + id + '/export'\" class=\"contents\">");
         w.Write("<input type=\"hidden\" name=\"ids\" :value=\"selected.join(',')\">");
-        w.Write("<button type=\"submit\" class=\"btn-primary-sm\">");
+        w.Write("<button type=\"submit\" class=\"btn-primary-sm\" :disabled=\"bulkBusy\">");
         w.Write(L("select.export"));
         w.Write("</button>");
         w.Write("</form>");
-        w.Write("<button type=\"button\" class=\"text-sm underline underline-offset-2 opacity-80 hover:opacity-100\" @click=\"clearSelection()\">");
+        w.Write("<button type=\"button\" class=\"cursor-pointer text-sm underline underline-offset-2 opacity-80 hover:opacity-100 disabled:cursor-not-allowed disabled:opacity-40\" :disabled=\"bulkBusy\" @click=\"clearSelection()\">");
         w.Write(L("select.clear"));
         w.Write("</button>");
         w.Write("</div>");
@@ -1372,7 +1417,10 @@ public sealed class GridHtmlRenderer<TItem>
 
     private void AppendDataRow(TextWriter w, TItem item, IReadOnlyList<GridColumn<TItem>> columns, int? absoluteIndex = null)
     {
-        var rowKey = _options.EnableRowSelection ? _options.RowKey?.Invoke(item) : null;
+        // rowKey is only set for a row the user may select: an unselectable row carries no data-id,
+        // so "select all" and the selection events never see it.
+        var selectionKey = _options.EnableRowSelection ? _options.RowKey?.Invoke(item) : null;
+        var rowKey = selectionKey is not null && (_options.RowSelectable?.Invoke(item) ?? true) ? selectionKey : null;
 
         var rowHref = _options.RowLink is { } rowLink ? GridUrl.Safe(rowLink(item)) : null;
         var rowEventKey = _options.RowEvent is not null ? _options.RowKey?.Invoke(item) : null;
@@ -1417,6 +1465,31 @@ public sealed class GridHtmlRenderer<TItem>
             w.Write(" data-id=\"");
             AppendEncoded(w, rowKey);
             w.Write('"');
+
+            // Bulk actions this row admits. Only emitted when some action is conditional (When):
+            // without the attribute the client takes every action as allowed.
+            if (_hasConditionalBulkActions)
+            {
+                w.Write(" data-bulk=\"");
+                var first = true;
+                foreach (var action in _options.BulkActions)
+                {
+                    if (action.When is { } when && !when(item))
+                    {
+                        continue;
+                    }
+
+                    if (!first)
+                    {
+                        w.Write(' ');
+                    }
+
+                    w.Write(action.Name);
+                    first = false;
+                }
+
+                w.Write('"');
+            }
         }
 
         // Only the URL travels with the row: the fragment is fetched when the row is expanded.
@@ -1444,14 +1517,27 @@ public sealed class GridHtmlRenderer<TItem>
             w.Write("</td>");
         }
 
-        if (_options.EnableRowSelection && rowKey is not null)
+        // The cell is always there (the header has one); only its checkbox depends on the row.
+        if (_options.EnableRowSelection && _options.RowKey is not null)
         {
             w.Write("<td data-pin=\"__select\" style=\"left:0\" class=\"sticky left-0 z-10 w-10 border-r border-neutral-100 bg-white px-4 py-2 align-middle hover:bg-brand-50/40 dark:border-neutral-800/60 dark:bg-neutral-900 dark:hover:bg-white/[0.04]\">");
-            w.Write("<input type=\"checkbox\" class=\"h-4 w-4 accent-brand-600\" aria-label=\"");
-            w.Write(L("select.row.aria"));
-            w.Write("\" @change=\"toggleSelection($el.closest('tr').dataset.id)\" :checked=\"isSelected(");
-            AppendJsQuoted(w, rowKey);
-            w.Write(")\">");
+            if (rowKey is not null)
+            {
+                w.Write("<input type=\"checkbox\" class=\"h-4 w-4 accent-brand-600\" aria-label=\"");
+                w.Write(L("select.row.aria"));
+                w.Write("\" @change=\"toggleSelection($el.closest('tr').dataset.id)\" :checked=\"isSelected(");
+                AppendJsQuoted(w, rowKey);
+                w.Write(")\">");
+            }
+            else if (selectionKey is not null)
+            {
+                w.Write("<input type=\"checkbox\" disabled class=\"h-4 w-4 cursor-not-allowed opacity-40\" aria-label=\"");
+                w.Write(L("select.row.aria"));
+                w.Write("\" title=\"");
+                AppendEncoded(w, L("select.row.disabled"));
+                w.Write("\">");
+            }
+
             w.Write("</td>");
         }
 

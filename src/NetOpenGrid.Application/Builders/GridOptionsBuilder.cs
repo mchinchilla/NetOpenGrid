@@ -40,6 +40,9 @@ public sealed class GridOptionsBuilder<T>
     private string _emptyMessage = "No records found.";
     private Func<T, string?>? _rowKey;
     private bool _enableRowSelection;
+    private GridSelectionScope _selectionScope = GridSelectionScope.All;
+    private Func<T, bool>? _rowSelectable;
+    private readonly List<GridBulkAction<T>> _bulkActions = [];
     private Func<T, string?>? _rowLink;
     private string? _rowLinkTarget;
     private string? _rowEvent;
@@ -299,6 +302,40 @@ public sealed class GridOptionsBuilder<T>
         return this;
     }
 
+    /// <summary>
+    /// How long a row stays selected. <see cref="GridSelectionScope.All"/> (default) keeps the selection
+    /// across pages, sorts, filters and searches; <see cref="GridSelectionScope.Page"/> empties it on any
+    /// of those, so bulk actions only ever receive rows the user is looking at.
+    /// </summary>
+    public GridOptionsBuilder<T> WithSelectionScope(GridSelectionScope scope)
+    {
+        _selectionScope = scope;
+        return this;
+    }
+
+    /// <summary>
+    /// Limits which rows can be selected: a row that fails <paramref name="predicate"/> gets a
+    /// disabled checkbox and "select all" skips it. Needs <c>EnableRowSelection</c>.
+    /// </summary>
+    public GridOptionsBuilder<T> RowSelectable(Func<T, bool> predicate)
+    {
+        ArgumentNullException.ThrowIfNull(predicate);
+        _rowSelectable = predicate;
+        return this;
+    }
+
+    /// <summary>
+    /// Adds a button to the selection bar. Clicking it raises <c>netgrid:bulk-action</c> with
+    /// <c>{ grid, action, keys, count }</c> on the grid root (and posts the same payload to a
+    /// same-origin parent when the grid lives in an iframe); the host page does the work.
+    /// Needs <c>EnableRowSelection</c>.
+    /// </summary>
+    public GridOptionsBuilder<T> AddBulkAction(string name, Action<GridBulkActionBuilder<T>>? configure = null)
+    {
+        _bulkActions.Add(GridBulkActionRules.Create(name, configure, _bulkActions));
+        return this;
+    }
+
     public GridOptionsBuilder<T> WithNavLinks(params GridNavLink[] links)
     {
         _navLinks = [.. links];
@@ -377,6 +414,9 @@ public sealed class GridOptionsBuilder<T>
             EmptyMessage = _emptyMessage,
             EnableRowSelection = _enableRowSelection,
             RowKey = _rowKey,
+            RowSelectable = _rowSelectable,
+            SelectionScope = _selectionScope,
+            BulkActions = _bulkActions.ToArray(),
             RowLink = _rowLink,
             RowLinkTarget = _rowLinkTarget,
             RowEvent = _rowEvent,
@@ -444,6 +484,8 @@ public sealed class GridOptionsBuilder<T>
         {
             throw new GridConfigurationException("EnableRowSelection requires a RowKey function.");
         }
+
+        GridBulkActionRules.Validate(_enableRowSelection, _bulkActions.Count > 0, _rowSelectable is not null);
 
         if (_rowActions.Any(static a => a.Kind == RowActionKind.Event) && _rowKey is null)
         {

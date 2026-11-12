@@ -1,0 +1,26 @@
+/* Shared by every theme in themes/*.css.
+
+   Buttons of the floating selection bar for host-defined bulk actions (AddBulkAction).
+   The bar is dark in light mode and white in dark mode, so the neutral tone inverts with it;
+   the coloured tones read on both. */
+@layer components {
+  .btn-bulk {
+    @apply inline-flex cursor-pointer items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium whitespace-nowrap shadow-sm transition disabled:cursor-not-allowed disabled:opacity-40;
+  }
+
+  .btn-bulk-primary {
+    @apply bg-brand-600 text-white hover:bg-brand-500 disabled:hover:bg-brand-600;
+  }
+
+  .btn-bulk-success {
+    @apply bg-emerald-600 text-white hover:bg-emerald-500 disabled:hover:bg-emerald-600;
+  }
+
+  .btn-bulk-danger {
+    @apply bg-rose-600 text-white hover:bg-rose-500 disabled:hover:bg-rose-600;
+  }
+
+  .btn-bulk-neutral {
+    @apply bg-white/15 text-white hover:bg-white/25 disabled:hover:bg-white/15 dark:bg-neutral-900/10 dark:text-neutral-900 dark:hover:bg-neutral-900/20 dark:disabled:hover:bg-neutral-900/10;
+  }
+}
