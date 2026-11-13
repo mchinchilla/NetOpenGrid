@@ -37,6 +37,7 @@ No virtual DOM. No reflection on the hot path. No per-request expression compila
 - [Workflows](#-workflows)
 - [EF Core (SQL push-down)](#-ef-core-sql-push-down)
 - [Excel-style filters (per-value counts)](#-excel-style-filters-per-value-counts)
+- [Filter chips: headers and value labels](#️-filter-chips-headers-of-filter-only-columns-and-value-labels)
 - [Pinned, reorderable, resizable & hideable columns](#-pinned-reorderable-resizable--hideable-columns)
 - [Clickable rows & row actions](#️-clickable-rows--row-actions)
 - [Bulk actions](#️-bulk-actions)
@@ -90,6 +91,7 @@ flowchart LR
 | | Typed, reflection-free | Delegate or expression selectors; sort/filter/search strategies compiled once at startup |
 | 🔍 **Filters** | By operator | 11 operators with per-column-type whitelist (text/num/date/enum/bool) |
 | | Excel-style | Distinct-value checklist **with counts** (Excel context: ignores the column's own filter) |
+| | Readable chips | Hidden filter-only columns show their header; `FilterValueLabels` shows an id as its number |
 | | Global search | `q` with debounce, OR across `Searchable` columns |
 | ↕️ **Sorting** | Stable multi-sort | Shift-click, deterministic ties (decorated array), nulls first |
 | 🗂️ **Grouping** | Nested up to 3 levels | `groupby` + `expand` in the URL; chevron headers with counts; groups are paged |
@@ -560,6 +562,89 @@ GET /netgrid/:id/values?field=category&<context>
 ```
 
 Implemented across all three engines: in-memory (snapshot grouping), JSON (`JsonElement`) and EF Core (`GROUP BY` translated to SQL). Numeric/date columns keep the operator popover.
+
+---
+
+## 🏷️ Filter chips: headers of filter-only columns and value labels
+
+A hidden column (`Visible(false)`) can still be filtered: it backs the filters your page sets (a date range, a
+text) or an id that arrives in a link (`?filter=sessionId:equals:<guid>`). The chip of such a filter should read
+like any other: `Session equals SES-2026-000010`, not `sessionId equals 01a1d207-…`.
+
+```csharp
+// Never rendered; only filtered by.
+.AddColumn(m => m.SessionId, c => c
+    .Header("Session")
+    .Visible(false)
+    .FilterValueLabels(async (ctx, ct) =>
+    {
+        var db = ctx.Services.GetRequiredService<AppDbContext>();   // the request's services
+        var ids = ctx.Values.Select(Guid.Parse).ToArray();          // every value, in one batch
+        return await db.Sessions
+            .Where(s => ids.Contains(s.Id))
+            .ToDictionaryAsync(s => s.Id.ToString(), s => s.Number, ct);
+    }))
+.AddColumn(m => m.Naturaleza, c => c.Header("Naturaleza").Visible(false))
+```
+
+**Header.** The chip of a filter on a hidden, filterable column shows its `Header` (through `TextLocalizer`, like
+the visible ones). Those columns are published on their own, in `__NETGRID__.filterHeaders[id]`, and not in
+`__NETGRID__.columns`: a hidden column never shows up in the column chooser and cannot be pinned, dragged or
+grouped from the UI.
+
+**Value labels.** `.FilterValueLabels(...)` (visible or hidden columns, JSON mode too) returns a
+`raw value → label` dictionary:
+
+- `ctx.Values`: the distinct values of the active `equals`, `not-equals` and `in` filters on the column (for `in`,
+  every element), as they arrived. `ctx.Field` is the field and `ctx.Services` the request's services
+  (`HttpContext.RequestServices`), so you can use your scoped `DbContext` or connection.
+- It is called **once per column and per request**, with every value, and **only** when that column has one of
+  those filters. No filter, no call.
+- It runs **after** the rows and totals queries, and resolvers run one after another: there are never two commands
+  at once, so one shared connection per request is fine (Npgsql does not allow concurrent commands).
+- A value you leave out (the record is gone) keeps its raw text. A key that only differs in case (a Guid in a
+  link) still matches.
+- If the resolver throws or is cancelled on its own, a warning is logged (category `NetOpenGrid`) and the chip
+  shows the raw value: it never breaks the page or the rows response. If the request is aborted, the cancellation
+  propagates like in the rest of the pipeline.
+
+**How they reach the browser.** On the first render they travel in `__NETGRID__.initial[id].filterLabels`; on
+every `/rows` response (changing a filter, applying a saved view, opening a link) in the `X-Grid-Filter-Labels`
+header as `{ field: { raw: label } }` JSON. An HTTP header cannot carry accented letters, so the JSON is plain
+ASCII: every non-ASCII character goes out as `\uXXXX` and the client runs a regular `JSON.parse`. The header was
+chosen over a `<script>` inside the fragment because the `/rows` body is nothing but `<tr>`: it is swapped as is
+into the `<tbody>`, the virtual scroll caches it block by block and hosts get it as `GridRowsResponse.Html`. If
+the JSON exceeds 3072 characters (proxies cap response headers) it is not sent, a warning is logged and the chips
+show raw values. Virtual scroll blocks ask for `labels=0` so the resolution is not repeated.
+
+**A value that does not fit the column.** A filter whose value does not parse to the column's type (`abc`
+against a number, a broken Guid in an old link: `filter=registerId:equals:garbage`) **matches nothing**: the page
+and `/rows` answer 200 with no rows, in all three engines, and that filter's chip is marked (⚠, `chip-invalid`
+style) with a `title` that says why; a click removes it and the rest of the view comes back. Showing every row
+would let the totals and an export of the whole set pass for the filtered ones. Before, with the Npgsql data
+source, such a filter threw.
+
+- Validation uses the column's own parser, for `equals`, `not-equals`, the comparisons and `in` (every non-empty
+  element). Text columns and JSON-mode columns take any value.
+- With an invalid filter the data source is not queried: the response is empty, the export has the header row
+  only and the value counts of the other columns come back empty (the column's own list is still filled, to pick
+  a valid value). No labels are resolved for that filter.
+- `GridRequestParser.Parse(...)` returns them in `InvalidFilters`. They reach the browser in
+  `__NETGRID__.initial[id].invalidFilters` and, on `/rows`, in the `X-Grid-Invalid-Filters` header (a JSON array
+  of fields).
+
+**Reusing the labels** (for instance, in the heading of your own Excel export):
+
+```csharp
+var runtime = HttpContext.RequestServices.GetRequiredKeyedService<IGridRuntime>("movements");
+var labels = await runtime.ResolveFilterLabelsAsync(Request.ToGridRequestValues(), ct);
+// labels["sessionId"]["01a1d207-…"] == "SES-2026-000010"
+// also: ResolveFilterLabelsAsync(GridQuery query, IServiceProvider services, ct)
+```
+
+When you call the runtime with hand-built values, hand it the services with `values.WithServices(sp)`;
+`Request.ToGridRequestValues()` already does. The library's own CSV/xlsx export does not describe the filters, so
+it does not use the labels.
 
 ---
 
@@ -1043,7 +1128,8 @@ you scroll down, and only the blocks near the viewport stay in the DOM.
 | `.Sortable / .Filterable / .Searchable` | `true/true/auto` | `auto`: search only on text columns |
 | `.AllowedOps(FilterOpSet)` | `All` | **Intersected** with what the type supports |
 | `.Comparer / .Parser / .SearchMatch` | built-ins | Reflection-free overrides |
-| `.Align / .WidthCss / .Visible` | `Start/–/true` | Presentation |
+| `.Align / .WidthCss / .Visible` | `Start/–/true` | Presentation. A hidden column can still be filtered and names its chip |
+| `.FilterValueLabels(async (ctx, ct) => …)` | — | `raw → text` labels for the values of the active filters (chips); one call per column and request |
 | `.Pinned() / .PinnedRight()` | — | Pins the column to the left / right edge |
 | `.DataType(...)` | inferred | `Text · Numeric · Date · Boolean · Enum · Unknown` |
 | `.ExcelFormat(numFmt)` | General | The column's number format in xlsx exports |
@@ -1104,6 +1190,8 @@ Compact symbols accepted in the query: `=` `!=` `>` `>=` `<` `<=` `~` (contains)
 | `X-Grid-Total` | Total after filtering (not paging) |
 | `X-Grid-Page` / `X-Grid-Page-Size` | Served page (normalized) |
 | `X-Grid-Page-Count` | Total pages |
+| `X-Grid-Invalid-Filters` | Fields whose filter matches nothing because its value does not fit the column (JSON array); only when there are any |
+| `X-Grid-Filter-Labels` | Labels of the filtered values, ASCII JSON `{ field: { raw: label } }`; only when there are any. `labels=0` in the query skips them |
 | `Cache-Control: no-store` | Always fresh |
 
 🔗 **Free deep links**: state lives in the URL — share
@@ -1309,6 +1397,8 @@ dotnet test
 - [x] Rows that raise an event instead of navigating: `WithRowEvent` (1.2.6)
 - [x] Expandable row detail, loaded on demand and cached: `WithRowDetail` + `ng-detail-*` blocks in the themes (1.2.7)
 - [x] Bulk actions on the selection: `AddBulkAction` · `RowSelectable`, events `netgrid:bulk-action` and `netgrid:selection`, messages `netgrid:clear-selection` · `netgrid:busy` · `netgrid:refresh`. `WithSelectionScope(Page)` limits the selection to the visible rows (1.4.3)
+- [x] Readable filter chips: header of hidden filter-only columns (`__NETGRID__.filterHeaders`) and value labels resolved on the server (`FilterValueLabels`, `IGridRuntime.ResolveFilterLabelsAsync`, `X-Grid-Filter-Labels` header) (1.5.0)
+- [x] A filter whose value does not fit the column returns no rows in every engine (Npgsql used to fail) and its chip is marked as invalid (1.5.0)
 
 ### 🧪 Quality
 

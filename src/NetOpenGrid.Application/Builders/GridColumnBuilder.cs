@@ -38,6 +38,7 @@ public sealed class GridColumnBuilder<TSource, TKey>
     private GridAggregate _aggregates = GridAggregate.None;
     private Func<GridAggregate, decimal, string?>? _aggregateFormat;
     private string? _excelFormat;
+    private GridFilterValueLabelResolver? _filterValueLabels;
 
     internal GridColumnBuilder(string field, Func<TSource, TKey> selector) : this(field, selector, null)
     {
@@ -156,6 +157,30 @@ public sealed class GridColumnBuilder<TSource, TKey>
     {
         ArgumentNullException.ThrowIfNull(renderer);
         _rawCellHtml = renderer;
+        return this;
+    }
+
+    /// <summary>
+    /// Readable labels for the raw values of this column's active filters, shown in the filter chips
+    /// (an id as its number or name). The runtime calls it at most once per request, with every
+    /// value of the column's <c>equals</c>, <c>not-equals</c> and <c>in</c> filters, and never when
+    /// the column has none. It runs after the rows are loaded, never at the same time as the data
+    /// source, so it may share the request's database connection. A value missing from the result,
+    /// or a resolver that throws, leaves the raw value in the chip. Works on hidden columns too.
+    /// <code>
+    /// .FilterValueLabels(async (ctx, ct) =&gt;
+    /// {
+    ///     var db = ctx.Services.GetRequiredService&lt;AppDbContext&gt;();
+    ///     var ids = ctx.Values.Select(Guid.Parse).ToArray();
+    ///     return await db.Sessions.Where(s =&gt; ids.Contains(s.Id))
+    ///         .ToDictionaryAsync(s =&gt; s.Id.ToString(), s =&gt; s.Number, ct);
+    /// })
+    /// </code>
+    /// </summary>
+    public GridColumnBuilder<TSource, TKey> FilterValueLabels(GridFilterValueLabelResolver resolver)
+    {
+        ArgumentNullException.ThrowIfNull(resolver);
+        _filterValueLabels = resolver;
         return this;
     }
 
@@ -293,6 +318,7 @@ public sealed class GridColumnBuilder<TSource, TKey>
             IsSortable = sortStrategy is not null,
             IsSearchable = searchStrategy is not null,
             IsVisible = _visible,
+            FilterValueLabels = filterFactory is null ? null : _filterValueLabels,
             IsPinned = _pinned,
             IsPinnedRight = _pinnedRight,
             DataType = dataType,

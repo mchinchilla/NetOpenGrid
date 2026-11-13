@@ -187,6 +187,8 @@ Missing properties behave like `null` (sort lowest, match `is-empty`).
 - Bulk actions: `AddBulkAction(...)` puts your own buttons in the selection bar and `RowSelectable(...)`
   limits which rows can be picked. A click only raises `netgrid:bulk-action` with the selected keys (also
   through a same-origin `postMessage` when embedded in an iframe); your page does the work.
+- Readable filter chips: a hidden filter-only column shows its header, and `FilterValueLabels(...)` turns raw
+  filter values into labels (an id into its number) with one batched call per column and request.
 - Pinned (sticky) columns and drag-and-drop reordering persisted in `localStorage`.
 - i18n: English defaults, bundled Spanish preset, per-key overrides.
 - Deep links: `page`, `pageSize`, `sort`, `filter`, `q`, `groupby`, `expand` and `cols` all live in the URL.

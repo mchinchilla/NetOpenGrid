@@ -1,10 +1,21 @@
 using System.Text.Json;
 using NetOpenGrid.Application.Options;
+using NetOpenGrid.Domain.Columns;
 using NetOpenGrid.Domain.GridQuerying;
 
 namespace NetOpenGrid.Application.Binding;
 
-public sealed record GridQueryNormalization(GridQuery Query, IReadOnlyList<string> Warnings);
+public sealed record GridQueryNormalization(GridQuery Query, IReadOnlyList<string> Warnings)
+{
+    /// <summary>
+    /// Filters on a known, filterable column whose value does not parse to the column's type
+    /// ("abc" against a number, a broken Guid from an old link). They are left out of
+    /// <see cref="Query"/>, so no data source ever sees them, and listed here so the grid can show
+    /// their chip marked as invalid. The runtime answers such a request with no rows: an invalid
+    /// filter matches nothing, in every engine, without failing the request.
+    /// </summary>
+    public IReadOnlyList<FilterDescriptor> InvalidFilters { get; init; } = [];
+}
 
 /// <summary>
 /// Parses and normalizes raw request values into a safe <see cref="GridQuery"/>.
@@ -36,7 +47,8 @@ public static class GridRequestParser
         }
 
         var sorts = ParseSorts(values.GetAll(SortParam), options, warnings);
-        var filters = ParseFilters(values.GetAll(FilterParam), options, warnings);
+        var invalidFilters = new List<FilterDescriptor>();
+        var filters = ParseFilters(values.GetAll(FilterParam), options, warnings, invalidFilters);
         var search = ParseSearch(values.Get(SearchParam), warnings);
         var groupBy = ParseGroupBy(values, options, warnings);
         var expanded = ParseExpanded(values, warnings);
@@ -49,7 +61,7 @@ public static class GridRequestParser
             groupBy,
             expanded);
 
-        return new GridQueryNormalization(query, warnings);
+        return new GridQueryNormalization(query, warnings) { InvalidFilters = invalidFilters };
     }
 
     private const int MaxGroupLevels = 3;
@@ -173,7 +185,8 @@ public static class GridRequestParser
     private static List<FilterDescriptor> ParseFilters<T>(
         IReadOnlyList<string> rawValues,
         GridOptions<T> options,
-        List<string> warnings)
+        List<string> warnings,
+        List<FilterDescriptor> invalid)
     {
         var filters = new List<FilterDescriptor>();
 
@@ -229,11 +242,57 @@ public static class GridRequestParser
                     continue;
                 }
 
+                if (!IsParsable(column, op, value))
+                {
+                    warnings.Add($"Ignored filter '{token}': the value is not valid for field '{field}'.");
+                    invalid.Add(new FilterDescriptor(column.Field, op, value));
+                    continue;
+                }
+
                 filters.Add(new FilterDescriptor(column.Field, op, isEmptyOp ? null : value));
             }
         }
 
         return filters;
+    }
+
+    /// <summary>
+    /// Whether a comparison value parses to the column's type, by the column's own
+    /// <see cref="GridColumn{T}.FilterValueParser"/> (the parser every engine filters with). Text
+    /// operators, the empty checks and columns without a typed parser (strings, JSON) take anything.
+    /// For <c>in</c>, every non-empty element must parse; an empty element stands for "no value".
+    /// </summary>
+    private static bool IsParsable<T>(GridColumn<T> column, FilterOperator op, string value)
+    {
+        if (column.FilterValueParser is not { } parser)
+        {
+            return true;
+        }
+
+        switch (op)
+        {
+            case FilterOperator.Equals:
+            case FilterOperator.NotEquals:
+            case FilterOperator.GreaterThan:
+            case FilterOperator.GreaterThanOrEqual:
+            case FilterOperator.LessThan:
+            case FilterOperator.LessThanOrEqual:
+                return parser(value, out _);
+
+            case FilterOperator.In:
+                foreach (var element in JsonSerializer.Deserialize<List<string?>>(value) ?? [])
+                {
+                    if (!string.IsNullOrEmpty(element) && !parser(element, out _))
+                    {
+                        return false;
+                    }
+                }
+
+                return true;
+
+            default:
+                return true;
+        }
     }
 
     private static bool IsValidInPayload(string value)

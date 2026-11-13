@@ -5,6 +5,7 @@
 @import "./shared/row-detail.css";
 /* Bulk action buttons of the selection bar. */
 @import "./shared/bulk-actions.css";
+@import "./shared/filter-chips.css";
 
 @custom-variant dark (&:where(.dark, .dark *));
 

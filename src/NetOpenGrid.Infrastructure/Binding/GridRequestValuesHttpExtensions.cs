@@ -13,7 +13,7 @@ public static class GridRequestValuesHttpExtensions
 
         if (query.Count == 0)
         {
-            return GridRequestValues.Empty;
+            return GridRequestValues.Empty.WithServices(request.HttpContext.RequestServices);
         }
 
         var entries = new List<KeyValuePair<string, IReadOnlyList<string>>>(query.Count);
@@ -31,6 +31,6 @@ public static class GridRequestValuesHttpExtensions
             entries.Add(new(key, list));
         }
 
-        return new GridRequestValues(entries);
+        return new GridRequestValues(entries).WithServices(request.HttpContext.RequestServices);
     }
 }

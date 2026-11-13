@@ -80,6 +80,14 @@ public sealed class GridColumn<T>
     public bool IsSearchable { get; init; }
     public bool IsVisible { get; init; } = true;
 
+    /// <summary>
+    /// Resolves the raw values of this column's active filters into readable labels for the filter
+    /// chips (an id into its number). Called at most once per request, with every value, and only
+    /// when the column has an <c>equals</c>, <c>not-equals</c> or <c>in</c> filter. Works on hidden
+    /// columns too.
+    /// </summary>
+    public GridFilterValueLabelResolver? FilterValueLabels { get; init; }
+
     public ColumnDataType DataType { get; init; } = ColumnDataType.Unknown;
     public ColumnAlign Align { get; init; } = ColumnAlign.Start;
     public string? WidthCss { get; init; }

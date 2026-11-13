@@ -465,13 +465,22 @@ public sealed class GridHtmlRenderer<TItem>
     /// Columnas que el usuario oculto: el encabezado las conserva con el atributo <c>hidden</c> y el
     /// cuerpo no las pinta.
     /// </param>
+    /// <param name="filterLabels">
+    /// Readable labels for the values of the active filters (field → raw value → label), published
+    /// in the initial state so the filter chips show them from the first paint.
+    /// </param>
+    /// <param name="invalidFilters">
+    /// Fields with a filter whose value does not parse (it matches nothing); their chips are marked.
+    /// </param>
     /// <returns>El HTML del grid, sin &lt;html&gt; ni &lt;head&gt;.</returns>
     public ValueTask<string> RenderFragmentAsync(
         GridExecutionResult<TItem> initialResult,
         IReadOnlyList<GridColumn<TItem>>? columnOrder = null,
         CancellationToken cancellationToken = default,
         GridAggregates? totals = null,
-        IReadOnlySet<string>? hiddenFields = null)
+        IReadOnlySet<string>? hiddenFields = null,
+        IReadOnlyDictionary<string, IReadOnlyDictionary<string, string>>? filterLabels = null,
+        IReadOnlyList<string>? invalidFilters = null)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
@@ -480,7 +489,7 @@ public sealed class GridHtmlRenderer<TItem>
         {
             using var writer = new StringWriter(sb);
             AppendGridRoot(writer, initialResult, ResolveColumns(columnOrder), totals, hiddenFields);
-            AppendStateScript(writer, initialResult.Page);
+            AppendStateScript(writer, initialResult.Page, filterLabels, invalidFilters);
             return ValueTask.FromResult(sb.ToString());
         }
         finally
@@ -515,6 +524,13 @@ public sealed class GridHtmlRenderer<TItem>
     /// Columnas que el usuario oculto: el encabezado las conserva con el atributo <c>hidden</c> y el
     /// cuerpo no las pinta.
     /// </param>
+    /// <param name="filterLabels">
+    /// Readable labels for the values of the active filters (field → raw value → label), published
+    /// in the initial state so the filter chips show them from the first paint.
+    /// </param>
+    /// <param name="invalidFilters">
+    /// Fields with a filter whose value does not parse (it matches nothing); their chips are marked.
+    /// </param>
     /// <returns>El HTML del shell como cadena.</returns>
     public async ValueTask<string> RenderShellAsync(
         GridExecutionResult<TItem> initialResult,
@@ -522,9 +538,11 @@ public sealed class GridHtmlRenderer<TItem>
         bool embedded = false,
         CancellationToken cancellationToken = default,
         GridAggregates? totals = null,
-        IReadOnlySet<string>? hiddenFields = null)
+        IReadOnlySet<string>? hiddenFields = null,
+        IReadOnlyDictionary<string, IReadOnlyDictionary<string, string>>? filterLabels = null,
+        IReadOnlyList<string>? invalidFilters = null)
     {
-        var fragment = await RenderFragmentAsync(initialResult, columnOrder, cancellationToken, totals, hiddenFields);
+        var fragment = await RenderFragmentAsync(initialResult, columnOrder, cancellationToken, totals, hiddenFields, filterLabels, invalidFilters);
 
         var sb = _stringBuilderPool.Get();
         try
@@ -932,15 +950,18 @@ public sealed class GridHtmlRenderer<TItem>
             w.Write("<button type=\"button\" @click=\"removeGroupBy(g)\" class=\"chip\" title=\"");
             w.Write(L("group.aria"));
             w.Write("\">");
-            w.Write("<span x-text=\"columnInfo(g)?.header || g\"></span><span aria-hidden=\"true\">&times;</span>");
+            w.Write("<span x-text=\"columnHeader(g)\"></span><span aria-hidden=\"true\">&times;</span>");
             w.Write("</button></template></div>");
         }
 
         w.Write("<div class=\"flex flex-wrap items-center gap-2\" x-show=\"activeFilters.length\" x-cloak>");
         w.Write("<template x-for=\"entry in activeFilters\" :key=\"entry.field\">");
-        w.Write("<button type=\"button\" @click=\"clearFilter(entry.field)\" class=\"chip\" title=\"");
+        // The chip of a filter that matches nothing because its value does not fit the column is
+        // marked, and its title says why; clicking it removes the filter like any other chip.
+        w.Write("<button type=\"button\" @click=\"clearFilter(entry.field)\" class=\"chip\" :class=\"{ 'chip-invalid': entry.invalid }\" :title=\"filterChipTitle(entry)\" title=\"");
         w.Write(L("chips.remove"));
         w.Write("\">");
+        w.Write("<span x-show=\"entry.invalid\" x-cloak aria-hidden=\"true\">&#9888;</span>");
         w.Write("<span x-text=\"entry.label\"></span><span aria-hidden=\"true\">&times;</span>");
         w.Write("</button></template></div>");
     }
@@ -969,7 +990,7 @@ public sealed class GridHtmlRenderer<TItem>
         w.Write("<span class=\"inline-flex items-center gap-2\">");
         w.Write("<span x-show=\"i > 0\" aria-hidden=\"true\" class=\"text-neutral-400\">&rsaquo;</span>");
         w.Write("<span class=\"chip cursor-grab\" draggable=\"true\" :data-group-chip=\"g\" @dragstart=\"onGroupChipDragStart(g, $event)\" @dragover.prevent @drop.prevent.stop=\"onGroupChipDrop(g, $event)\">");
-        w.Write("<span x-text=\"columnInfo(g)?.header || g\"></span>");
+        w.Write("<span x-text=\"columnHeader(g)\"></span>");
         w.Write("<button type=\"button\" class=\"cursor-pointer leading-none\" :aria-label=\"removeGroupLabel(g)\" @click=\"removeGroupBy(g)\">&times;</button>");
         w.Write("</span></span></template>");
         w.Write("</div>");
@@ -1671,7 +1692,11 @@ public sealed class GridHtmlRenderer<TItem>
         w.Write("</div></td>");
     }
 
-    private void AppendStateScript(TextWriter w, PageResult<TItem> page)
+    private void AppendStateScript(
+        TextWriter w,
+        PageResult<TItem> page,
+        IReadOnlyDictionary<string, IReadOnlyDictionary<string, string>>? filterLabels,
+        IReadOnlyList<string>? invalidFilters)
     {
         w.Write("<script>window.__NETGRID__=window.__NETGRID__||{};");
         w.Write("__NETGRID__.initial=__NETGRID__.initial||{};");
@@ -1692,7 +1717,55 @@ public sealed class GridHtmlRenderer<TItem>
             w.Write(",\"capped\":true");
         }
 
+        // Labels for the values of the filters this first paint already has (a link, a saved view).
+        if (filterLabels is { Count: > 0 })
+        {
+            w.Write(",\"filterLabels\":");
+            w.Write(Runtime.GridFilterLabels.ToJson(filterLabels));
+        }
+
+        // Filters of this first paint whose value does not fit the column: they match nothing.
+        if (invalidFilters is { Count: > 0 })
+        {
+            w.Write(",\"invalidFilters\":");
+            w.Write(JsonSerializer.Serialize(invalidFilters));
+        }
+
         w.Write("};");
+
+        // Hidden columns the user can still filter by (a host filter bar, an id in a link) need a
+        // name for their filter chip. They get a map of their own, apart from __NETGRID__.columns:
+        // that list drives pinning, the group panel, header drops and the column chooser, and a
+        // hidden column must never show up there.
+        var named = false;
+        foreach (var column in _options.Columns)
+        {
+            if (column.IsVisible || !column.IsFilterable)
+            {
+                continue;
+            }
+
+            if (!named)
+            {
+                w.Write("__NETGRID__.filterHeaders=__NETGRID__.filterHeaders||{};__NETGRID__.filterHeaders[");
+                AppendJsonString(w, _options.Id);
+                w.Write("]={");
+            }
+            else
+            {
+                w.Write(',');
+            }
+
+            named = true;
+            AppendJsonString(w, column.Field);
+            w.Write(':');
+            AppendJsonString(w, T(column.Label));
+        }
+
+        if (named)
+        {
+            w.Write("};");
+        }
 
         w.Write("__NETGRID__.virtual=__NETGRID__.virtual||{};__NETGRID__.virtual[");
         AppendJsonString(w, _options.Id);

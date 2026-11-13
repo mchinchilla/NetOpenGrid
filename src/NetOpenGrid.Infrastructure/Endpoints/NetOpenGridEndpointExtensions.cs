@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using NetOpenGrid.Application.Binding;
 using NetOpenGrid.Application.Options;
 using NetOpenGrid.Infrastructure.Assets;
@@ -136,6 +137,32 @@ public static class NetOpenGridEndpointExtensions
         if (response.TotalCountIsCapped)
         {
             headers["X-Grid-Total-Capped"] = "1";
+        }
+
+        // Filter value labels travel next to the rest of the rows' metadata, as ASCII-only JSON
+        // (see GridFilterLabels.ToJson). The body stays what it is, a run of <tr>: it is swapped
+        // into the <tbody>, cached block by block by the virtual scroll and handed to hosts as
+        // GridRowsResponse.Html, and none of those should have to strip a <script> out of it.
+        if (response.FilterLabels.Count > 0)
+        {
+            var json = GridFilterLabels.ToJson(response.FilterLabels);
+            if (json.Length <= GridFilterLabels.MaxHeaderLength)
+            {
+                headers[GridFilterLabels.HeaderName] = json;
+            }
+            else
+            {
+                http.RequestServices.GetService<ILoggerFactory>()?.CreateLogger("NetOpenGrid").LogWarning(
+                    "NetOpenGrid: the filter value labels take {Length} characters, above the {Limit} a response header may carry; the filter chips show the raw values.",
+                    json.Length,
+                    GridFilterLabels.MaxHeaderLength);
+            }
+        }
+
+        if (response.InvalidFilters.Count > 0)
+        {
+            // Field names may be anything a JSON payload has: same ASCII-only JSON as the labels.
+            headers[GridFilterLabels.InvalidFiltersHeaderName] = System.Text.Json.JsonSerializer.Serialize(response.InvalidFilters);
         }
 
         headers["Cache-Control"] = "no-store";

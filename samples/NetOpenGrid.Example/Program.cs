@@ -128,6 +128,25 @@ builder.Services.AddNetOpenGrid(
         .WithPageSizeChoices([15, 30, 60])
         .WithMinHeight("")
         .AddColumn(o => o.Number, c => c.Header("Order").Pinned())
+        // A filter-only column: never shown, but a link (or a host filter bar) can filter by it,
+        // e.g. /netgrid/orders?filter=id:equals:42. Its chip reads "Order id equals ORD-00042":
+        // the header comes from here, and the number from the resolver, which gets every value of
+        // the active filters in one call and uses the request's own scoped DbContext.
+        .AddColumn(o => o.Id, c => c
+            .Header("Order id")
+            .Visible(false)
+            .FilterValueLabels(async (ctx, ct) =>
+            {
+                var ids = ctx.Values
+                    .Select(v => int.TryParse(v, NumberStyles.Integer, CultureInfo.InvariantCulture, out var id) ? id : (int?)null)
+                    .OfType<int>()
+                    .ToArray();
+                var db = ctx.Services.GetRequiredService<ShopDb>();
+                return await db.Orders.AsNoTracking()
+                    .Where(o => ids.Contains(o.Id))
+                    .ToDictionaryAsync(o => o.Id.ToString(CultureInfo.InvariantCulture), o => o.Number, ct);
+            }))
+        .AddView("Three orders by id (hidden filter)", "filter=id:in:[\"42\",\"43\",\"999999\"]")
         .AddColumn(o => o.Customer, c => c.Searchable())
         .AddColumn(o => o.Country)
         .AddColumn(o => o.City)

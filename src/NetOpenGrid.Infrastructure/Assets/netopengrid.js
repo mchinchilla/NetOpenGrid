@@ -38,6 +38,8 @@
     'bulk.unavailable': 'Not available for some of the selected rows',
     'bulk.confirm.one': '{action}: apply to the selected row?',
     'bulk.confirm.many': '{action}: apply to the {n} selected rows?',
+    'chips.remove': 'Remove filter',
+    'chips.invalid': 'This value is not valid for the column, so the filter matches nothing. Click to remove it.',
     'chips.anyOf': 'any of {values}',
     'chips.anyOfMore': 'any of {values} +{n}',
     'filter.values.truncated': 'Showing {shown} of {total} values',
@@ -271,6 +273,8 @@
       sorts: [],
       filters: {},
       selected: [],
+      filterValueLabels: {},
+      invalidFilters: [],
       selectionScope: 'all',
       bulkBusy: false,
       bulkAllowed: null,
@@ -343,13 +347,20 @@
           .filter(([, f]) => f)
           .map(([field, f]) => ({
             field,
-            label: `${this.columnHeader(field)} ${this.filterLabel(f)}`
+            label: `${this.columnHeader(field)} ${this.filterLabel(f, field)}`,
+            invalid: this.invalidFilters.includes(field)
           }));
       },
 
-      filterLabel(f) {
+      // The text of a filter chip after the column name. A value the server resolved a label for
+      // (FilterValueLabels: an id shown as its number) reads as that label; any other value, such as
+      // the id of a record that no longer exists, stays raw.
+      filterLabel(f, field) {
+        const labels = (field && this.filterValueLabels[field]) || {};
+        const text = (value) => labels[value] ?? value;
+
         if (f.op === 'in') {
-          const values = parseInValues(f.value);
+          const values = parseInValues(f.value).map(text);
           const shown = values.slice(0, 2).join(', ');
           return values.length > 2
             ? L('chips.anyOfMore', { values: shown, n: values.length - 2 })
@@ -357,7 +368,40 @@
         }
 
         const opText = L(`ops.${f.op}`);
-        return `${opText}${isEmptyOp(f.op) ? '' : ` ${f.value}`}`;
+        return `${opText}${isEmptyOp(f.op) ? '' : ` ${text(f.value)}`}`;
+      },
+
+      // A filter whose value does not fit its column ("abc" on a number, a broken id from an old
+      // link) matches nothing: the server answers with no rows and names the field. The chip is
+      // marked, so the user sees which filter emptied the grid and can remove it. The list is
+      // replaced with every /rows response.
+      filterChipTitle(entry) {
+        return L(entry.invalid ? 'chips.invalid' : 'chips.remove');
+      },
+
+      applyInvalidFilters(json) {
+        let fields = [];
+        try {
+          const parsed = json ? JSON.parse(json) : [];
+          if (Array.isArray(parsed)) fields = parsed.map(String);
+        } catch {
+          /* malformed header: no chip is marked */
+        }
+        this.invalidFilters = fields;
+      },
+
+      // Labels arrive with the first paint (__NETGRID__.initial) and with every /rows response, so
+      // they follow the filters wherever those come from: the popover, a saved view, a link.
+      // Until the response lands a new value shows raw. A missing or broken header keeps what was
+      // there: labels are keyed by value, so a stale entry can only name a value it belongs to.
+      applyFilterLabels(json) {
+        if (!json) return;
+        try {
+          const parsed = JSON.parse(json);
+          if (parsed && typeof parsed === 'object') this.filterValueLabels = { ...this.filterValueLabels, ...parsed };
+        } catch {
+          /* malformed header: the chips keep showing what they have */
+        }
       },
 
       get allPageSelected() {
@@ -369,8 +413,10 @@
         return this.editing === null ? '' : this.columnHeader(this.editing);
       },
 
+      // How a field is named to the user: the header of its visible column, else the header of a
+      // hidden column that can only be filtered (__NETGRID__.filterHeaders), else the field.
       columnHeader(field) {
-        return this.columnInfo(field)?.header || field;
+        return this.columnInfo(field)?.header || window.__NETGRID__?.filterHeaders?.[id]?.[field] || field;
       },
 
       columnInfo(field) {
@@ -381,7 +427,10 @@
       init() {
         const initial = window.__NETGRID__?.initial?.[id];
         if (initial) {
-          this.meta = { ...initial };
+          const { filterLabels, invalidFilters, ...meta } = initial;
+          this.meta = meta;
+          this.filterValueLabels = filterLabels ?? {};
+          this.invalidFilters = invalidFilters ?? [];
           this.page = initial.page ?? 1;
           this.pageSize = initial.pageSize ?? 25;
         }
@@ -571,7 +620,7 @@
       pinLabel(field) {
         const side = this.pinSide(field);
         const key = side === '' ? 'pin.left.aria' : side === 'left' ? 'pin.right.aria' : 'pin.none.aria';
-        return L(key, { field: this.columnInfo(field)?.header || field });
+        return L(key, { field: this.columnHeader(field) });
       },
 
       // Left-pinned first, then the rest, then right-pinned: sticky needs pins at their edge.
@@ -1105,7 +1154,7 @@
       },
 
       removeGroupLabel(field) {
-        return L('group.remove.aria', { field: this.columnInfo(field)?.header || field });
+        return L('group.remove.aria', { field: this.columnHeader(field) });
       },
 
       removeGroupBy(field) {
@@ -1116,6 +1165,8 @@
       },
 
       applyRowsMeta(headers) {
+        this.applyFilterLabels(headers.get('X-Grid-Filter-Labels'));
+        this.applyInvalidFilters(headers.get('X-Grid-Invalid-Filters'));
         const total = headers.get('X-Grid-Total');
         if (total !== null) {
           this.meta = {
@@ -1737,6 +1788,7 @@
         const params = toParams(this, null);
         params.set('page', String(block + 1));
         params.set('pageSize', String(this.virtualCfg.blockSize));
+        params.set('labels', '0');   // same query as the first block: the chips already have their labels
 
         try {
           const response = await fetch(`${PREFIX()}/${this.id}/rows?${params.toString()}`, {

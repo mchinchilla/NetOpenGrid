@@ -1,4 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using NetOpenGrid.Application.Builders;
 using NetOpenGrid.Application.Options;
 using NetOpenGrid.Domain.Abstractions;
@@ -81,7 +82,8 @@ public sealed class NetOpenGridBuilder(IServiceCollection services)
                 options,
                 dataSourceFactory(serviceProvider, options),
                 serviceProvider.GetRequiredService<NetOpenGridAssetOptions>(),
-                serviceProvider.GetRequiredService<NetOpenGridLocalizationOptions>()));
+                serviceProvider.GetRequiredService<NetOpenGridLocalizationOptions>(),
+                serviceProvider.GetService<ILoggerFactory>()?.CreateLogger("NetOpenGrid")));
 
         return this;
     }

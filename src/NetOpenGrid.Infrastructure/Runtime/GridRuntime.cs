@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text.Json;
+using Microsoft.Extensions.Logging;
 using NetOpenGrid.Application.Binding;
 using NetOpenGrid.Application.Engine;
 using NetOpenGrid.Application.Options;
@@ -23,12 +24,24 @@ public sealed class GridRuntime<TItem> : IGridRuntime
     private readonly IGridDataSource<TItem> _dataSource;
     private readonly Rendering.GridHtmlRenderer<TItem> _renderer;
     private readonly NetOpenGridLocalizationOptions _locale;
+    private readonly ILogger? _logger;
+    private readonly GridColumn<TItem>[] _labelColumns;
 
     public GridRuntime(
         GridOptions<TItem> options,
         IGridDataSource<TItem> dataSource,
         NetOpenGridAssetOptions assetOptions,
         NetOpenGridLocalizationOptions localizationOptions)
+        : this(options, dataSource, assetOptions, localizationOptions, null)
+    {
+    }
+
+    public GridRuntime(
+        GridOptions<TItem> options,
+        IGridDataSource<TItem> dataSource,
+        NetOpenGridAssetOptions assetOptions,
+        NetOpenGridLocalizationOptions localizationOptions,
+        ILogger? logger)
     {
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(dataSource);
@@ -37,6 +50,8 @@ public sealed class GridRuntime<TItem> : IGridRuntime
         _options = options;
         _dataSource = dataSource;
         _locale = localizationOptions;
+        _logger = logger;
+        _labelColumns = options.Columns.Where(static c => c.FilterValueLabels is not null).ToArray();
         _renderer = new Rendering.GridHtmlRenderer<TItem>(options, assetOptions, localizationOptions);
     }
 
@@ -57,7 +72,9 @@ public sealed class GridRuntime<TItem> : IGridRuntime
         var columnOrder = ResolveColumnOrder(values);
         var hidden = ResolveHiddenFields(values);
 
-        if (normalization.Query.GroupFields.Count > 0 && _dataSource is IGridGroupingSource<TItem> groupingSource)
+        if (normalization.InvalidFilters.Count == 0 &&
+            normalization.Query.GroupFields.Count > 0 &&
+            _dataSource is IGridGroupingSource<TItem> groupingSource)
         {
             var grouped = await groupingSource.LoadGroupedAsync(normalization.Query, cancellationToken);
             var groupTotals = grouped.TotalGroups > 0 ? await LoadTotalsAsync(normalization.Query, cancellationToken) : null;
@@ -68,10 +85,14 @@ public sealed class GridRuntime<TItem> : IGridRuntime
                 grouped.TotalGroups,
                 grouped.Page,
                 grouped.PageSize,
-                Math.Max(grouped.TotalPages, 1));
+                Math.Max(grouped.TotalPages, 1))
+            {
+                FilterLabels = await ResolveRequestLabelsAsync(normalization.Query, values, cancellationToken),
+                InvalidFilters = InvalidFields(normalization)
+            };
         }
 
-        var result = await new GridQueryEngine<TItem>(_dataSource).ExecuteAsync(PageLoadQuery(normalization.Query), cancellationToken);
+        var result = await LoadPageAsync(normalization, cancellationToken);
         var totals = await LoadTotalsAsync(result, cancellationToken);
         var html = await _renderer.RenderRowsAsync(result, columnOrder, cancellationToken, totals, hidden);
 
@@ -81,7 +102,213 @@ public sealed class GridRuntime<TItem> : IGridRuntime
             result.Page.Page,
             result.Page.PageSize,
             Math.Max(result.Page.TotalPages, 1),
-            result.Page.TotalCountIsCapped);
+            result.Page.TotalCountIsCapped)
+        {
+            FilterLabels = await ResolveRequestLabelsAsync(normalization.Query, values, cancellationToken),
+            InvalidFilters = InvalidFields(normalization)
+        };
+    }
+
+    /// <summary>
+    /// The page for a request. A filter whose value does not fit its column (see
+    /// <see cref="GridQueryNormalization.InvalidFilters"/>) matches nothing, so the request gets an
+    /// empty page and the data source is not asked at all: showing every row instead would let the
+    /// totals and an export of the whole set pass for the filtered ones. The chip of that filter
+    /// is marked, and removing it brings the rest of the view back.
+    /// </summary>
+    private async ValueTask<GridExecutionResult<TItem>> LoadPageAsync(GridQueryNormalization normalization, CancellationToken cancellationToken) =>
+        normalization.InvalidFilters.Count > 0
+            ? EmptyResult(normalization.Query)
+            : await new GridQueryEngine<TItem>(_dataSource).ExecuteAsync(PageLoadQuery(normalization.Query), cancellationToken);
+
+    private static GridExecutionResult<TItem> EmptyResult(GridQuery query) =>
+        new(query, new PageResult<TItem>([], 0, PageRequest.FirstPage, query.Paging.PageSize));
+
+    /// <summary>Fields with a filter that matches nothing because its value does not fit the column.</summary>
+    private static string[] InvalidFields(GridQueryNormalization normalization) =>
+        normalization.InvalidFilters.Count == 0
+            ? []
+            : normalization.InvalidFilters.Select(static f => f.Field).Distinct(StringComparer.Ordinal).ToArray();
+
+    // ---- Filter value labels -------------------------------------------------------------------
+
+    /// <summary>
+    /// "labels=0" skips the resolvers: the client sends it with the blocks of a virtual scroll,
+    /// which repeat the query whose labels it already has.
+    /// </summary>
+    private ValueTask<IReadOnlyDictionary<string, IReadOnlyDictionary<string, string>>> ResolveRequestLabelsAsync(
+        GridQuery query,
+        GridRequestValues values,
+        CancellationToken cancellationToken) =>
+        values.Get("labels") == "0"
+            ? ValueTask.FromResult(GridFilterLabels.None)
+            : ResolveFilterLabelsAsync(query, values.Services ?? NoServices.Instance, cancellationToken);
+
+    public ValueTask<IReadOnlyDictionary<string, IReadOnlyDictionary<string, string>>> ResolveFilterLabelsAsync(
+        GridRequestValues values,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(values);
+        return ResolveFilterLabelsAsync(
+            GridRequestParser.Parse(values, _options).Query,
+            values.Services ?? NoServices.Instance,
+            cancellationToken);
+    }
+
+    /// <summary>
+    /// One call per column that has a resolver and an equals, not-equals or in filter, with all its
+    /// values. The resolvers are awaited one after another, and the callers await this after the
+    /// rows and the totals: a host that shares one database connection per request (Npgsql runs one
+    /// command at a time on a connection) never sees two commands at once.
+    /// </summary>
+    public async ValueTask<IReadOnlyDictionary<string, IReadOnlyDictionary<string, string>>> ResolveFilterLabelsAsync(
+        GridQuery query,
+        IServiceProvider services,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(query);
+        ArgumentNullException.ThrowIfNull(services);
+
+        if (_labelColumns.Length == 0 || query.Filters.Count == 0)
+        {
+            return GridFilterLabels.None;
+        }
+
+        Dictionary<string, IReadOnlyDictionary<string, string>>? labels = null;
+
+        foreach (var column in _labelColumns)
+        {
+            var values = FilterValues(query, column.Field);
+            if (values.Count == 0)
+            {
+                continue;
+            }
+
+            IReadOnlyDictionary<string, string>? resolved;
+            try
+            {
+                resolved = await column.FilterValueLabels!(
+                    new GridFilterValueLabelContext(column.Field, values, services),
+                    cancellationToken);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                // The request itself was aborted: nobody is waiting for the response.
+                throw;
+            }
+            catch (Exception ex)
+            {
+                // A label is decoration: a resolver that throws, times out or is cancelled on its own
+                // never breaks the page or the rows. The chip shows the raw value.
+                _logger?.LogWarning(
+                    ex,
+                    "NetOpenGrid '{Grid}': the filter value labels of column '{Field}' could not be resolved; its filter chips show the raw values.",
+                    _options.Id,
+                    column.Field);
+                continue;
+            }
+
+            var matched = MatchLabels(values, resolved);
+            if (matched is not null)
+            {
+                (labels ??= new(StringComparer.Ordinal))[column.Field] = matched;
+            }
+        }
+
+        return labels ?? GridFilterLabels.None;
+    }
+
+    /// <summary>Distinct raw values of the field's equals, not-equals and in filters, in request order.</summary>
+    private static List<string> FilterValues(GridQuery query, string field)
+    {
+        var values = new List<string>();
+
+        void Add(string? value)
+        {
+            if (!string.IsNullOrEmpty(value) && !values.Contains(value, StringComparer.Ordinal))
+            {
+                values.Add(value);
+            }
+        }
+
+        foreach (var filter in query.Filters)
+        {
+            if (!string.Equals(filter.Field, field, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            if (filter.Operator is FilterOperator.Equals or FilterOperator.NotEquals)
+            {
+                Add(filter.Value);
+            }
+            else if (filter.Operator == FilterOperator.In)
+            {
+                try
+                {
+                    foreach (var element in JsonSerializer.Deserialize<List<string?>>(filter.Value ?? "[]") ?? [])
+                    {
+                        Add(element);
+                    }
+                }
+                catch (JsonException)
+                {
+                    // The request parser already dropped malformed lists; nothing to label.
+                }
+            }
+        }
+
+        return values;
+    }
+
+    /// <summary>
+    /// Keeps the labels of the requested values, keyed by the value as the client sent it. A key
+    /// that only differs in case still matches: a Guid arrives in whatever case the link had, and
+    /// the host usually builds its keys with <c>Guid.ToString()</c>.
+    /// </summary>
+    private static Dictionary<string, string>? MatchLabels(List<string> values, IReadOnlyDictionary<string, string>? resolved)
+    {
+        if (resolved is null || resolved.Count == 0)
+        {
+            return null;
+        }
+
+        Dictionary<string, string>? matched = null;
+        Dictionary<string, string>? ignoreCase = null;
+
+        foreach (var value in values)
+        {
+            if (!resolved.TryGetValue(value, out var label))
+            {
+                ignoreCase ??= IgnoreCase(resolved);
+                ignoreCase.TryGetValue(value, out label);
+            }
+
+            if (!string.IsNullOrWhiteSpace(label) && !string.Equals(label, value, StringComparison.Ordinal))
+            {
+                (matched ??= new(StringComparer.Ordinal))[value] = label;
+            }
+        }
+
+        return matched;
+    }
+
+    private static Dictionary<string, string> IgnoreCase(IReadOnlyDictionary<string, string> source)
+    {
+        var map = new Dictionary<string, string>(source.Count, StringComparer.OrdinalIgnoreCase);
+        foreach (var (key, label) in source)
+        {
+            map.TryAdd(key, label);
+        }
+
+        return map;
+    }
+
+    private sealed class NoServices : IServiceProvider
+    {
+        public static NoServices Instance { get; } = new();
+
+        public object? GetService(Type serviceType) => null;
     }
 
     /// <summary>
@@ -173,6 +400,14 @@ public sealed class GridRuntime<TItem> : IGridRuntime
                    _options.FilterValuesLimit.ToString(CultureInfo.InvariantCulture) + "}";
         }
 
+        // An invalid filter on another column leaves nothing to count. One on this very column does
+        // not: the list ignores the column's own filter, and it is where the user picks a valid value.
+        if (normalization.InvalidFilters.Any(f => !string.Equals(f.Field, column.Field, StringComparison.Ordinal)))
+        {
+            return "{\"field\":" + JsonSerializer.Serialize(field) + ",\"values\":[],\"totalDistinct\":0,\"limit\":" +
+                   _options.FilterValuesLimit.ToString(CultureInfo.InvariantCulture) + "}";
+        }
+
         var counts = await countingSource.GetValuesAsync(column, normalization.Query, cancellationToken);
 
         var payload = JsonSerializer.Serialize(new
@@ -217,7 +452,10 @@ public sealed class GridRuntime<TItem> : IGridRuntime
 
         GridQuery PageQuery(int page) => normalization.Query with { Paging = new PageRequest(page, pageSize), ExactCount = true };
 
-        var first = await engine.ExecuteAsync(PageQuery(1), cancellationToken);
+        // An invalid filter matches nothing: the export is the header row alone.
+        var first = normalization.InvalidFilters.Count > 0
+            ? EmptyResult(PageQuery(1))
+            : await engine.ExecuteAsync(PageQuery(1), cancellationToken);
 
         // Every page of the export, capped at maxRows. The total may increase between pages
         // (live source): the cap holds anyway.
@@ -296,19 +534,21 @@ public sealed class GridRuntime<TItem> : IGridRuntime
     public async ValueTask<string> RenderShellAsync(GridRequestValues values, CancellationToken cancellationToken = default)
     {
         var normalization = GridRequestParser.Parse(values, _options);
-        var result = await new GridQueryEngine<TItem>(_dataSource).ExecuteAsync(PageLoadQuery(normalization.Query), cancellationToken);
+        var result = await LoadPageAsync(normalization, cancellationToken);
         // ?embed=1 lo pone la página anfitriona en el src del iframe; abierto a pelo, el grid
         // sigue trayendo su propio cromo.
         var embedded = values.Get("embed") is "1" or "true";
         var totals = await LoadTotalsAsync(result, cancellationToken);
-        return await _renderer.RenderShellAsync(result, ResolveColumnOrder(values), embedded, cancellationToken, totals, ResolveHiddenFields(values));
+        var labels = await ResolveRequestLabelsAsync(normalization.Query, values, cancellationToken);
+        return await _renderer.RenderShellAsync(result, ResolveColumnOrder(values), embedded, cancellationToken, totals, ResolveHiddenFields(values), labels, InvalidFields(normalization));
     }
 
     public async ValueTask<string> RenderFragmentAsync(GridRequestValues values, CancellationToken cancellationToken = default)
     {
         var normalization = GridRequestParser.Parse(values, _options);
-        var result = await new GridQueryEngine<TItem>(_dataSource).ExecuteAsync(PageLoadQuery(normalization.Query), cancellationToken);
+        var result = await LoadPageAsync(normalization, cancellationToken);
         var totals = await LoadTotalsAsync(result, cancellationToken);
-        return await _renderer.RenderFragmentAsync(result, ResolveColumnOrder(values), cancellationToken, totals, ResolveHiddenFields(values));
+        var labels = await ResolveRequestLabelsAsync(normalization.Query, values, cancellationToken);
+        return await _renderer.RenderFragmentAsync(result, ResolveColumnOrder(values), cancellationToken, totals, ResolveHiddenFields(values), labels, InvalidFields(normalization));
     }
 }
