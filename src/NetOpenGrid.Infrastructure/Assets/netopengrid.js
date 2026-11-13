@@ -387,10 +387,10 @@
         }
 
         this.pageSizeLocked = false;
-        this.loadColumnOrder();
         this.virtualCfg = window.__NETGRID__?.virtual?.[id] ?? null;
         this.serverViews = window.__NETGRID__?.views?.[id] ?? [];
         this.defaultColumnOrder = (window.__NETGRID__?.columns?.[id] ?? []).map((c) => c.field);
+        this.loadColumnOrder();
         this.loadUserViews();
         this.loadHiddenColumns();
         this.seedFromUrl();
@@ -479,12 +479,38 @@
         }
       },
 
+      // The one rule for a column order, the same as the server's (GridRuntime.ResolveColumnOrder):
+      // keep the known visible fields without repeats, then add the visible columns the list
+      // leaves out, in their default order. An order saved before the grid gained a column, or a
+      // cols= link written by hand, would otherwise sort the header and the cells differently.
+      // Null when nothing usable is listed (the default order applies).
+      normalizeColumnOrder(order) {
+        const known = this.defaultColumnOrder;
+        const listed = Array.isArray(order)
+          ? [...new Set(order.map(String))].filter((f) => known.includes(f))
+          : [];
+        if (listed.length === 0) return null;
+        return [...listed, ...known.filter((f) => !listed.includes(f))];
+      },
+
+      // Needs defaultColumnOrder. A stale saved order is written back normalized, so it heals itself.
       loadColumnOrder() {
+        let raw = null;
         try {
-          const saved = localStorage.getItem(`netgrid:cols:${id}`);
-          if (saved) this.columnOrder = JSON.parse(saved);
+          raw = localStorage.getItem(`netgrid:cols:${id}`);
+          this.columnOrder = this.normalizeColumnOrder(raw ? JSON.parse(raw) : null);
         } catch {
           this.columnOrder = null;
+        }
+        if (raw !== null && raw !== JSON.stringify(this.columnOrder)) this.saveColumnOrder();
+      },
+
+      saveColumnOrder() {
+        try {
+          if (this.columnOrder?.length) localStorage.setItem(`netgrid:cols:${id}`, JSON.stringify(this.columnOrder));
+          else localStorage.removeItem(`netgrid:cols:${id}`);
+        } catch {
+          /* storage unavailable; the order stays session-only */
         }
       },
 
@@ -550,7 +576,7 @@
 
       // Left-pinned first, then the rest, then right-pinned: sticky needs pins at their edge.
       effectiveColumnOrder() {
-        const base = this.columnOrder?.length ? this.columnOrder : this.defaultColumnOrder;
+        const base = this.normalizeColumnOrder(this.columnOrder) ?? this.defaultColumnOrder;
         const left = base.filter((f) => this.pinnedFields.includes(f));
         const right = base.filter((f) => this.pinnedRightFields.includes(f));
         const middle = base.filter((f) => !left.includes(f) && !right.includes(f));
@@ -642,12 +668,7 @@
         this.applyHeaderOrder();
         this.applyHeaderVisibility();
         this.saveHiddenColumns();
-        try {
-          if (this.columnOrder?.length) localStorage.setItem(`netgrid:cols:${this.id}`, JSON.stringify(this.columnOrder));
-          else localStorage.removeItem(`netgrid:cols:${this.id}`);
-        } catch {
-          /* storage unavailable */
-        }
+        this.saveColumnOrder();
 
         await this.refresh();
       },
@@ -941,14 +962,9 @@
         if (from === -1 || to === -1) return;
 
         order.splice(to, 0, order.splice(from, 1)[0]);
-        this.columnOrder = order;
+        this.columnOrder = this.normalizeColumnOrder(order);
         this.applyHeaderOrder();
-
-        try {
-          localStorage.setItem(`netgrid:cols:${id}`, JSON.stringify(order));
-        } catch {
-          /* storage unavailable; order stays session-only */
-        }
+        this.saveColumnOrder();
 
         await this.refresh();
       },
@@ -991,7 +1007,7 @@
         const cols = params.get('cols');
         if (cols) {
           const fields = cols.split(',').map((s) => s.trim()).filter(Boolean);
-          if (fields.length > 0) this.columnOrder = fields;
+          if (fields.length > 0) this.columnOrder = this.normalizeColumnOrder(fields);
         }
 
         const hide = params.get('hide');
