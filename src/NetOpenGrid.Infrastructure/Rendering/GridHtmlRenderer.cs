@@ -368,7 +368,7 @@ public sealed class GridHtmlRenderer<TItem>
         {
             w.Write("<div class=\"leading-5\" data-agg=\"");
             w.Write(AggregateKey(function));
-            w.Write("\"><span class=\"mr-1.5 text-[10px] font-medium uppercase tracking-wide text-neutral-400 dark:text-neutral-500\">");
+            w.Write("\"><span class=\"mr-1.5 text-[10px] font-medium uppercase tracking-wide text-neutral-600 dark:text-neutral-400\">");
             AppendEncoded(w, L("agg." + AggregateKey(function)));
             w.Write("</span><span class=\"font-semibold tabular-nums text-neutral-800 dark:text-neutral-100\">");
 
@@ -711,9 +711,14 @@ public sealed class GridHtmlRenderer<TItem>
         var debounceMs = Math.Max(_options.DebounceMilliseconds, 0);
 
         w.Write("<div class=\"flex flex-wrap items-center gap-3\">");
-        w.Write("<h1 class=\"text-lg font-semibold tracking-tight\">");
+        var heading = (char)('0' + Math.Clamp(_options.HeadingLevel, 1, 6));
+        w.Write("<h");
+        w.Write(heading);
+        w.Write(" class=\"text-lg font-semibold tracking-tight\">");
         AppendEncoded(w, T(_options.Title));
-        w.Write("</h1>");
+        w.Write("</h");
+        w.Write(heading);
+        w.Write('>');
 
         if (_options.Subtitle.Length > 0)
         {
@@ -1002,7 +1007,7 @@ public sealed class GridHtmlRenderer<TItem>
         w.Write(" :class=\"groupDropActive ? 'ring-2 ring-brand-500/60 bg-brand-50/70 dark:ring-brand-400/60 dark:bg-brand-900/20' : ''\"");
         w.Write(" @dragover.prevent=\"onGroupPanelDragOver($event)\" @dragleave=\"groupDropActive = false\" @drop.prevent=\"onGroupPanelDrop($event)\">");
 
-        w.Write("<span x-show=\"groupBy.length === 0\" class=\"text-neutral-400 select-none dark:text-neutral-500\">");
+        w.Write("<span x-show=\"groupBy.length === 0\" class=\"text-neutral-600 select-none dark:text-neutral-400\">");
         w.Write(L("group.panel.hint"));
         w.Write("</span>");
 
@@ -1715,11 +1720,13 @@ public sealed class GridHtmlRenderer<TItem>
     }
 
     /// <summary>
-    /// The grid's first-paint state as a data block (<c>&lt;script type="application/json"&gt;</c>): the browser never runs it,
-    /// so a host with a strict Content-Security-Policy (<c>script-src 'self'</c>, no nonce) loads it as is. netopengrid.js reads
+    /// The grid's first-paint state as inert data (<c>&lt;template data-netgrid-state&gt;</c> holding JSON): the browser never
+    /// runs it, so a host with a strict Content-Security-Policy (<c>script-src 'self'</c>, no nonce) loads it as is, and it is
+    /// not a <c>&lt;script&gt;</c>, which htmx drops from swapped content under <c>allowScriptTags: false</c> (a grid reached
+    /// through hx-boost, or swapped in, would otherwise start without its state). netopengrid.js reads
     /// it when the component starts (<c>readState</c>) and files each part under <c>window.__NETGRID__</c> by grid id. Every
     /// string goes through <see cref="JsonEncodedText"/> / <see cref="JsonSerializer"/>, which escape <c>&lt;</c>, <c>&gt;</c>
-    /// and <c>&amp;</c>: a title or filter label can never close the block.
+    /// and <c>&amp;</c>: the JSON has no markup or entity, so the template's text is the JSON as written.
     /// </summary>
     private void AppendStateScript(
         TextWriter w,
@@ -1727,7 +1734,7 @@ public sealed class GridHtmlRenderer<TItem>
         IReadOnlyDictionary<string, IReadOnlyDictionary<string, string>>? filterLabels,
         IReadOnlyList<string>? invalidFilters)
     {
-        w.Write("<script type=\"application/json\" data-netgrid-state=\"");
+        w.Write("<template data-netgrid-state=\"");
         w.Write(Encoder.Encode(_options.Id));
         w.Write("\">{\"id\":");
         AppendJsonString(w, _options.Id);
@@ -1833,7 +1840,7 @@ public sealed class GridHtmlRenderer<TItem>
         // data-endpoint prefix instead of a hardcoded "/netgrid" literal.
         w.Write(",\"prefix\":");
         AppendJsonString(w, _assetOptions.RoutePrefix);
-        w.Write("}</script>");
+        w.Write("}</template>");
     }
 
     private bool IsFirstFilterable(GridColumn<TItem> column)

@@ -64,7 +64,12 @@ public partial class StrictCspRenderingTests
         using var host = await BuildHostAsync();
         var runtime = host.Services.GetRequiredKeyedService<IGridRuntime>("full");
 
-        AssertStrict(await runtime.RenderFragmentAsync(GridRequestValues.Empty));
+        var fragment = await runtime.RenderFragmentAsync(GridRequestValues.Empty);
+        AssertStrict(fragment);
+        // htmx drops every <script> from swapped content under allowScriptTags: false (the strict-CSP setting): a fragment
+        // swapped in (hx-boost, hx-get) must carry its state without one.
+        Assert.DoesNotContain("<script", fragment, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("<template data-netgrid-state=\"full\">{", fragment, StringComparison.Ordinal);
         AssertStrict(GridAssetTags.Head(host.Services.GetRequiredService<NetOpenGridAssetOptions>(), "grid"));
     }
 

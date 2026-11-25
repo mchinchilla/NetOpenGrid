@@ -1105,6 +1105,8 @@ bloques mientras bajas, y en el DOM solo quedan los bloques cerca de lo que ves.
 | `.WithExportFormats(formats)` | `Csv \| Xlsx` | Formatos del botón y del endpoint de export |
 | `.WithColumnResize(bool)` | `true` | Tiradores para redimensionar columnas |
 | `.WithColumnChooser(bool)` | `true` | Menú para mostrar/ocultar columnas |
+| `.WithThemeToggle(bool)` | `true` | Botón claro/oscuro; apágalo si la página anfitriona maneja el tema (el grid sigue su `.dark`) |
+| `.WithHeadingLevel(n)` | `1` | Nivel del encabezado del título (1–6); `2` si la página anfitriona ya tiene su `<h1>` |
 | `.WithVirtualScroll(blockSize, height)` | off | Scroll virtual por bloques en vez de paginador |
 | `.WithGroupPanel(bool)` | `true` | Panel para agrupar arrastrando encabezados |
 | `.WithAggregateRows(rows)` | `Footer \| GroupHeader` | Filas donde se muestran los agregados |
@@ -1298,6 +1300,33 @@ y con su variante oscura:
 
 Los nombres anteriores siguen como alias: `badge-delivered` = success, `badge-pending` = warning,
 `badge-cancelled` = danger, `badge-shipped` = info, `badge-muted` = neutral.
+
+### Dentro del Tailwind (y la CSP estricta) de la app anfitriona
+
+Una app con su propio Tailwind 4 y una sola hoja puede importar el tema compilado (los bytes de
+`EmbeddedGridAssets.Themes["grid"]`, copiados a su proyecto) en vez de servirlo aparte:
+
+```css
+@layer theme, base, components, utilities;
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/preflight.css" layer(base);
+@import "./netopengrid-grid.css";                 /* entre la base y las utilidades de la app */
+@import "tailwindcss/utilities.css" layer(utilities);
+@source not "./ruta/al/netopengrid.js";           /* sus clases ya vienen en el tema */
+```
+
+- Con un solo `@import "tailwindcss"` las utilidades de la app quedan **antes** que las del grid y,
+  por ejemplo, un `.hidden` del grid tapa un `lg:flex` de la app. Partido así, en cada capa la app va
+  después y gana.
+- Si Tailwind escanea `netopengrid.js`, genera sus clases (`bg-neutral-50`…) entre las de la app,
+  después del tema, y tapan las variantes `dark:` del grid: exclúyelo con `@source not`.
+- Las clases de componente del tema (`.btn-ghost`, `.badge`, `.chip`…) solo aplican dentro de un
+  grid (`[data-netgrid]` en su raíz): las de la app con el mismo nombre no cambian.
+- El modo oscuro es `.dark` en `<html>`: si la app usa otro mecanismo, que lo refleje y apague el
+  botón del grid con `.WithThemeToggle(false)`.
+- Con htmx y `allowScriptTags: false` (lo que pide una CSP estricta) htmx quita los `<script>` del
+  contenido que intercambia; por eso el estado del grid viaja en `<template data-netgrid-state>`
+  (desde 1.6.2) y el grid funciona aunque llegue por `hx-boost`.
 
 ---
 

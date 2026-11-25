@@ -5,8 +5,8 @@ using Xunit;
 namespace NetOpenGrid.Integration.Tests;
 
 /// <summary>
-/// Reads a grid's first-paint state from its data block (<c>&lt;script type="application/json" data-netgrid-state="{id}"&gt;</c>),
-/// the way netopengrid.js does: a strict Content-Security-Policy host needs a block the browser never runs.
+/// Reads a grid's first-paint state from its data block (<c>&lt;template data-netgrid-state="{id}"&gt;</c>), the way
+/// netopengrid.js does: inert JSON a strict Content-Security-Policy host never runs and htmx never drops from a swap.
 /// </summary>
 internal static partial class GridState
 {
@@ -18,6 +18,6 @@ internal static partial class GridState
         return document.RootElement.Clone();
     }
 
-    [GeneratedRegex("<script type=\"application/json\" data-netgrid-state=\"(?<id>[^\"]*)\">(?<json>.*?)</script>", RegexOptions.Singleline)]
+    [GeneratedRegex("<template data-netgrid-state=\"(?<id>[^\"]*)\">(?<json>.*?)</template>", RegexOptions.Singleline)]
     private static partial Regex Block();
 }

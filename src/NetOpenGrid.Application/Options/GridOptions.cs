@@ -10,6 +10,12 @@ public sealed class GridOptions<T>
     public required string Id { get; init; }
     public required IReadOnlyList<GridColumn<T>> Columns { get; init; }
     public string Title { get; init; } = "Data grid";
+
+    /// <summary>
+    /// Heading level of the title in the toolbar (1–6, default 1). A host page that already has its own &lt;h1&gt; embeds the
+    /// grid one level below it.
+    /// </summary>
+    public int HeadingLevel { get; init; } = 1;
     public string Subtitle { get; init; } = string.Empty;
     public int DefaultPageSize { get; init; } = PageRequest.DefaultPageSize;
     public int MaxPageSize { get; init; } = 500;

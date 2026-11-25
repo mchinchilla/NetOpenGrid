@@ -33,6 +33,7 @@ public sealed class JsonGridOptionsBuilder
     private bool _enableColumnResize = true;
     private bool _enableColumnChooser = true;
     private bool _enableThemeToggle = true;
+    private int _headingLevel = 1;
     private bool _enableGroupPanel = true;
     private GridVirtualScroll? _virtualScroll;
     private GridAggregateRows _aggregateRows = GridAggregateRows.Footer | GridAggregateRows.GroupHeader;
@@ -84,6 +85,15 @@ public sealed class JsonGridOptionsBuilder
 
     public JsonGridOptionsBuilder WithGroupPanel(bool enabled = true) { _enableGroupPanel = enabled; return this; }
     public JsonGridOptionsBuilder WithColumnChooser(bool enabled = true) { _enableColumnChooser = enabled; return this; }
+
+    /// <summary>Heading level of the toolbar title (1–6, default 1): 2 when the host page already has its own &lt;h1&gt;.</summary>
+    public JsonGridOptionsBuilder WithHeadingLevel(int level)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(level, 1);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(level, 6);
+        _headingLevel = level;
+        return this;
+    }
 
     /// <summary>Light/dark button in the toolbar (on by default). Turn it off when the host page owns the theme.</summary>
     public JsonGridOptionsBuilder WithThemeToggle(bool enabled = true) { _enableThemeToggle = enabled; return this; }
@@ -295,6 +305,7 @@ public sealed class JsonGridOptionsBuilder
             EnableColumnResize = _enableColumnResize,
             EnableColumnChooser = _enableColumnChooser,
             EnableThemeToggle = _enableThemeToggle,
+            HeadingLevel = _headingLevel,
             EnableGroupPanel = _enableGroupPanel,
             VirtualScroll = _virtualScroll,
             AggregateRows = _aggregateRows,

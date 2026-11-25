@@ -35,6 +35,7 @@ public sealed class GridOptionsBuilder<T>
     private bool _enableColumnResize = true;
     private bool _enableColumnChooser = true;
     private bool _enableThemeToggle = true;
+    private int _headingLevel = 1;
     private bool _enableGroupPanel = true;
     private GridVirtualScroll? _virtualScroll;
     private GridAggregateRows _aggregateRows = GridAggregateRows.Footer | GridAggregateRows.GroupHeader;
@@ -176,6 +177,15 @@ public sealed class GridOptionsBuilder<T>
     public GridOptionsBuilder<T> WithColumnChooser(bool enabled = true)
     {
         _enableColumnChooser = enabled;
+        return this;
+    }
+
+    /// <summary>Heading level of the toolbar title (1–6, default 1): 2 when the host page already has its own &lt;h1&gt;.</summary>
+    public GridOptionsBuilder<T> WithHeadingLevel(int level)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(level, 1);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(level, 6);
+        _headingLevel = level;
         return this;
     }
 
@@ -417,6 +427,7 @@ public sealed class GridOptionsBuilder<T>
             EnableColumnResize = _enableColumnResize,
             EnableColumnChooser = _enableColumnChooser,
             EnableThemeToggle = _enableThemeToggle,
+            HeadingLevel = _headingLevel,
             EnableGroupPanel = _enableGroupPanel,
             VirtualScroll = _virtualScroll,
             AggregateRows = _aggregateRows,

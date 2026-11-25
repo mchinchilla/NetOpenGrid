@@ -30,7 +30,7 @@ public class FragmentRenderingTests : IClassFixture<GridHostFixture>
         var html = await runtime.RenderFragmentAsync(GridRequestValues.Empty);
 
         Assert.Contains("x-data=\"netgrid", html, StringComparison.Ordinal);
-        Assert.Contains("<script type=\"application/json\" data-netgrid-state=", html, StringComparison.Ordinal);
+        Assert.Contains("<template data-netgrid-state=", html, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -41,7 +41,7 @@ public class FragmentRenderingTests : IClassFixture<GridHostFixture>
 
         Assert.StartsWith("<!doctype html>", html, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("</html>", html, StringComparison.Ordinal);
-        Assert.Contains("<script type=\"application/json\" data-netgrid-state=", html, StringComparison.Ordinal);
+        Assert.Contains("<template data-netgrid-state=", html, StringComparison.Ordinal);
 
         // Pin the verified-good composition order (doctype -> head -> body -> <main> ->
         // grid root -> state script -> </main> -> </body></html>). In particular this

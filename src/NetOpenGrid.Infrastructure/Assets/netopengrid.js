@@ -8,16 +8,17 @@
 
   const isEmptyOp = (op) => op === 'is-empty' || op === 'is-not-empty';
 
-  // Each grid ships its first-paint state as <script type="application/json" data-netgrid-state="{id}">: data the browser
-  // never runs, so a host with a strict Content-Security-Policy (script-src 'self', no nonce) needs nothing special. It is
+  // Each grid ships its first-paint state as JSON in <template data-netgrid-state="{id}">: inert data, so a host with a strict
+  // Content-Security-Policy (script-src 'self', no nonce) needs nothing special, and not a <script>, which htmx drops from
+  // swapped content under allowScriptTags: false. 1.6.0–1.6.1 used <script type="application/json">; both are read. It is
   // filed under window.__NETGRID__ by grid id, the shape the rest of the runtime reads. Without an id, every block on the page.
   const readState = (id) => {
     const ng = (window.__NETGRID__ = window.__NETGRID__ || {});
-    for (const block of document.querySelectorAll('script[type="application/json"][data-netgrid-state]')) {
+    for (const block of document.querySelectorAll('template[data-netgrid-state], script[type="application/json"][data-netgrid-state]')) {
       if (id !== undefined && block.dataset.netgridState !== id) continue;
       let state;
       try {
-        state = JSON.parse(block.textContent);
+        state = JSON.parse(block.content ? block.content.textContent : block.textContent);
       } catch {
         continue;
       }

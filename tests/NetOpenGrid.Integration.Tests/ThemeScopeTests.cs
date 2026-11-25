@@ -59,6 +59,21 @@ public partial class ThemeScopeTests
         Assert.DoesNotContain("toggleTheme()", await Render(false), StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task Title_Heading_Level_Is_Configurable()
+    {
+        static Task<string> Render(Application.Builders.GridOptionsBuilder<string> builder) => new Infrastructure.Rendering.GridHtmlRenderer<string>(
+                builder.WithId("plain").WithTitle("Plans").AddColumn("value", v => v).Build(), new Infrastructure.Runtime.NetOpenGridAssetOptions())
+            .RenderFragmentAsync(new Application.Engine.GridExecutionResult<string>(
+                Domain.GridQuerying.GridQuery.Empty, new Domain.Results.PageResult<string>(["a"], 1, 1, 10))).AsTask();
+
+        Assert.Contains(">Plans</h1>", await Render(new()), StringComparison.Ordinal);
+        var embedded = await Render(new Application.Builders.GridOptionsBuilder<string>().WithHeadingLevel(2));
+        Assert.Contains(">Plans</h2>", embedded, StringComparison.Ordinal);
+        Assert.DoesNotContain("<h1", embedded, StringComparison.Ordinal);
+        Assert.Throws<ArgumentOutOfRangeException>(() => new Application.Builders.GridOptionsBuilder<string>().WithHeadingLevel(7));
+    }
+
     /// <summary>Each complete selector (between braces or commas) that names the class.</summary>
     private static Regex Selector(string name) => new($@"(?:^|[{{}},])(?<selector>[^{{}},]*\.{Regex.Escape(name)}(?![\w-])[^{{}},]*)(?=[{{,])");
 }
