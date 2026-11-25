@@ -64,6 +64,12 @@ public sealed class GridOptions<T>
     /// <summary>Toolbar menu to show/hide columns (choice persisted per browser and in the URL).</summary>
     public bool EnableColumnChooser { get; init; } = true;
 
+    /// <summary>
+    /// Light/dark button in the toolbar (it toggles <c>.dark</c> on the document). Off for a host that owns its theme: the
+    /// grid then follows whatever <c>.dark</c> the host sets.
+    /// </summary>
+    public bool EnableThemeToggle { get; init; } = true;
+
     /// <summary>Drag handles on the column headers (widths persisted per browser).</summary>
     public bool EnableColumnResize { get; init; } = true;
 

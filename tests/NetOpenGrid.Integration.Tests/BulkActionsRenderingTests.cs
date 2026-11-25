@@ -151,7 +151,7 @@ public class BulkActionsRenderingTests
     {
         var html = await Renderer(BulkOptions()).RenderShellAsync(Page());
 
-        Assert.Contains("x-data=\"netgrid('entries')\" class=\"space-y-4\">", html);
+        Assert.Contains("x-data=\"netgrid('entries')\" data-netgrid class=\"space-y-4\">", html);
         Assert.DoesNotContain("data-selection-scope", html);
     }
 
@@ -161,7 +161,7 @@ public class BulkActionsRenderingTests
         var options = Builder().WithSelectionScope(GridSelectionScope.Page).Build();
         var html = await Renderer(options).RenderShellAsync(Page());
 
-        Assert.Contains("x-data=\"netgrid('entries')\" class=\"space-y-4\" data-selection-scope=\"page\">", html);
+        Assert.Contains("x-data=\"netgrid('entries')\" data-netgrid class=\"space-y-4\" data-selection-scope=\"page\">", html);
     }
 
     // ---- Rows ------------------------------------------------------------------------------------

@@ -34,6 +34,7 @@ public sealed class GridOptionsBuilder<T>
     private bool _enableSavedViews = true;
     private bool _enableColumnResize = true;
     private bool _enableColumnChooser = true;
+    private bool _enableThemeToggle = true;
     private bool _enableGroupPanel = true;
     private GridVirtualScroll? _virtualScroll;
     private GridAggregateRows _aggregateRows = GridAggregateRows.Footer | GridAggregateRows.GroupHeader;
@@ -175,6 +176,13 @@ public sealed class GridOptionsBuilder<T>
     public GridOptionsBuilder<T> WithColumnChooser(bool enabled = true)
     {
         _enableColumnChooser = enabled;
+        return this;
+    }
+
+    /// <summary>Light/dark button in the toolbar (on by default). Turn it off when the host page owns the theme.</summary>
+    public GridOptionsBuilder<T> WithThemeToggle(bool enabled = true)
+    {
+        _enableThemeToggle = enabled;
         return this;
     }
 
@@ -408,6 +416,7 @@ public sealed class GridOptionsBuilder<T>
             EnableSavedViews = _enableSavedViews,
             EnableColumnResize = _enableColumnResize,
             EnableColumnChooser = _enableColumnChooser,
+            EnableThemeToggle = _enableThemeToggle,
             EnableGroupPanel = _enableGroupPanel,
             VirtualScroll = _virtualScroll,
             AggregateRows = _aggregateRows,

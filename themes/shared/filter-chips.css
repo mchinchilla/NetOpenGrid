@@ -3,7 +3,10 @@
    A filter chip whose filter matches nothing because its value does not fit the column
    (see GridQueryNormalization.InvalidFilters). Same shape as .chip, in the warning colour. */
 @layer components {
-  .chip.chip-invalid {
-    @apply border-amber-300 bg-amber-50 text-amber-800 line-through decoration-amber-500/60 hover:bg-amber-100 dark:border-amber-700 dark:bg-amber-900/30 dark:text-amber-200 dark:hover:bg-amber-900/50;
+  /* Only inside a grid ([data-netgrid] on its root): a host page that has its own .btn-ghost or .badge keeps them. */
+  [data-netgrid] {
+    .chip.chip-invalid {
+      @apply border-amber-300 bg-amber-50 text-amber-800 line-through decoration-amber-500/60 hover:bg-amber-100 dark:border-amber-700 dark:bg-amber-900/30 dark:text-amber-200 dark:hover:bg-amber-900/50;
+    }
   }
 }

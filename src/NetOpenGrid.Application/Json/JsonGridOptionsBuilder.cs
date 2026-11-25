@@ -32,6 +32,7 @@ public sealed class JsonGridOptionsBuilder
     private bool _enableSavedViews = true;
     private bool _enableColumnResize = true;
     private bool _enableColumnChooser = true;
+    private bool _enableThemeToggle = true;
     private bool _enableGroupPanel = true;
     private GridVirtualScroll? _virtualScroll;
     private GridAggregateRows _aggregateRows = GridAggregateRows.Footer | GridAggregateRows.GroupHeader;
@@ -83,6 +84,9 @@ public sealed class JsonGridOptionsBuilder
 
     public JsonGridOptionsBuilder WithGroupPanel(bool enabled = true) { _enableGroupPanel = enabled; return this; }
     public JsonGridOptionsBuilder WithColumnChooser(bool enabled = true) { _enableColumnChooser = enabled; return this; }
+
+    /// <summary>Light/dark button in the toolbar (on by default). Turn it off when the host page owns the theme.</summary>
+    public JsonGridOptionsBuilder WithThemeToggle(bool enabled = true) { _enableThemeToggle = enabled; return this; }
     public JsonGridOptionsBuilder WithColumnResize(bool enabled = true) { _enableColumnResize = enabled; return this; }
     public JsonGridOptionsBuilder WithAggregateRows(GridAggregateRows rows) { _aggregateRows = rows; return this; }
     /// <summary>
@@ -290,6 +294,7 @@ public sealed class JsonGridOptionsBuilder
             EnableSavedViews = _enableSavedViews,
             EnableColumnResize = _enableColumnResize,
             EnableColumnChooser = _enableColumnChooser,
+            EnableThemeToggle = _enableThemeToggle,
             EnableGroupPanel = _enableGroupPanel,
             VirtualScroll = _virtualScroll,
             AggregateRows = _aggregateRows,

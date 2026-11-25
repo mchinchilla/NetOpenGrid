@@ -682,7 +682,8 @@ public sealed class GridHtmlRenderer<TItem>
         AppendEncoded(w, _options.Id);
         w.Write("\" x-data=\"netgrid(");
         AppendJsQuoted(w, _options.Id);
-        w.Write(")\" class=\"space-y-4\"");
+        // data-netgrid scopes the theme's component classes (.btn-ghost, .badge, .chip…) to the grid: a host page keeps its own.
+        w.Write(")\" data-netgrid class=\"space-y-4\"");
 
         // The client keeps the selection across pages unless the grid asks for a page-only one.
         if (_options.EnableRowSelection && _options.SelectionScope == GridSelectionScope.Page)
@@ -764,12 +765,15 @@ public sealed class GridHtmlRenderer<TItem>
             AppendColumnChooser(w);
         }
 
-        w.Write("<button type=\"button\" @click=\"toggleTheme()\" class=\"btn-icon\" aria-label=\"");
-        w.Write(L("theme.aria"));
-        w.Write("\">");
-        w.Write(SunIcon);
-        w.Write(MoonIcon);
-        w.Write("</button>");
+        if (_options.EnableThemeToggle)
+        {
+            w.Write("<button type=\"button\" @click=\"toggleTheme()\" class=\"btn-icon\" aria-label=\"");
+            w.Write(L("theme.aria"));
+            w.Write("\">");
+            w.Write(SunIcon);
+            w.Write(MoonIcon);
+            w.Write("</button>");
+        }
 
         AppendExportControl(w);
 
