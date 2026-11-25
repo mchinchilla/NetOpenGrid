@@ -190,6 +190,19 @@ using (var scope = app.Services.CreateScope())
     db.SaveChanges();
 }
 
+// Pages/Strict.cshtml: the same Content-Security-Policy a strict host sends (no inline scripts or styles, no eval).
+const string strictCsp = "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; "
+    + "connect-src 'self'; frame-src 'self'; frame-ancestors 'none'; form-action 'self'; base-uri 'self'; object-src 'none'";
+app.Use(async (context, next) =>
+{
+    if (context.Request.Path.StartsWithSegments("/strict"))
+    {
+        context.Response.Headers.ContentSecurityPolicy = strictCsp;
+    }
+
+    await next();
+});
+
 app.UseStaticFiles();      // site.css (the grid themes come from the assembly)
 app.MapNetOpenGrid();      // GET /netgrid/{id} · /rows · /values · /export · /_netgrid/*
 app.MapRazorPages();       // the host pages under Pages/

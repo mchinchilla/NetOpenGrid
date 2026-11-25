@@ -1,0 +1,33 @@
+@page "/strict"
+@using Microsoft.AspNetCore.Html
+@using NetOpenGrid.Infrastructure.Binding
+@using NetOpenGrid.Infrastructure.Runtime
+@inject IServiceProvider Services
+@{
+    Layout = null;
+    var values = Request.ToGridRequestValues();
+    var products = await Services.GetRequiredKeyedService<IGridRuntime>("products").RenderFragmentAsync(values, HttpContext.RequestAborted);
+    var orders = await Services.GetRequiredKeyedService<IGridRuntime>("orders").RenderFragmentAsync(values, HttpContext.RequestAborted);
+}
+@* A host page under a strict CSP (script-src 'self'; style-src 'self'), htmx 2 with eval off and the Alpine CSP build:
+   the grid fragments are rendered inline. Any CSP violation or Alpine CSP parser error shows up in the console. *@
+<!DOCTYPE html>
+<html lang="en" hx-ext="alpine-compat">
+<head>
+    <meta charset="utf-8" />
+    <meta name="htmx-config" content='{"allowEval":false,"allowScriptTags":false,"includeIndicatorStyles":false,"historyCacheSize":0,"selfRequestsOnly":true}' />
+    <title>NetOpenGrid · strict CSP</title>
+    <link rel="stylesheet" href="/_netgrid/css/netopengrid-grid.css" />
+    <link rel="stylesheet" href="/strict/strict.css" />
+    <script src="/strict/htmx-2.0.11.min.js" defer></script>
+    <script src="/strict/alpine-compat-1.0.0.js" defer></script>
+    <script src="/strict/strict.js" defer></script>
+    <script src="/_netgrid/netopengrid.js" defer></script>
+    <script src="/strict/alpine-csp-3.17.4.min.js" defer></script>
+</head>
+<body hx-boost="true">
+    <h1>Strict CSP host</h1>
+    <section class="strict-grid">@(new HtmlString(products))</section>
+    <section class="strict-grid">@(new HtmlString(orders))</section>
+</body>
+</html>

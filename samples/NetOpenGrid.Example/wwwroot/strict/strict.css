@@ -1,0 +1,4 @@
+/* Strict-CSP host page (Pages/Strict.cshtml): what a host with style-src 'self' puts in its own stylesheet. */
+[x-cloak] { display: none !important; }
+body { margin: 0; padding: 24px; font-family: system-ui, sans-serif; }
+.strict-grid { margin-bottom: 32px; }
