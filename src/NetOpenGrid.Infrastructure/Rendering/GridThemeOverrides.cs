@@ -23,14 +23,14 @@ internal static class GridThemeOverrides
         IEnumerable<string> globalStylesheets,
         IEnumerable<string>? gridStylesheets = null)
     {
-        // Options and builders already validate; this re-check keeps a hand-built GridOptions
-        // (its init setters do not validate) from writing into a <style> element, where HTML
-        // encoding would not help.
+        // The brand colour travels as data (a strict Content-Security-Policy drops an inline <style>): netopengrid.js and
+        // netopengrid-theme.js set --ng-brand from it through CSSOM. Options and builders already validate; this re-check
+        // keeps a hand-built GridOptions (its init setters do not validate) from writing anything but a CSS colour.
         if (GridCssColor.IsValid(brandColor))
         {
-            w.Write("<style>:root{--ng-brand:");
-            w.Write(brandColor!.Trim());
-            w.Write("}</style>");
+            w.Write("<meta name=\"netgrid-brand\" content=\"");
+            w.Write(Encoder.Encode(brandColor!.Trim()));
+            w.Write("\">");
         }
 
         WriteLinks(w, globalStylesheets);

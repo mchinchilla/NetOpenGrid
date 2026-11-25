@@ -34,6 +34,7 @@ public static class NetOpenGridEndpointExtensions
 
         // Assets stay anonymous and outside the returned group.
         MapAsset(endpoints, $"{assetPrefix}/netopengrid.js", EmbeddedGridAssets.ClientRuntime);
+        MapAsset(endpoints, $"{assetPrefix}/netopengrid-theme.js", EmbeddedGridAssets.ThemeBoot);
         MapAsset(endpoints, $"{assetPrefix}/vendor/htmx.min.js", EmbeddedGridAssets.Htmx);
         MapAsset(endpoints, $"{assetPrefix}/vendor/alpine.min.js", EmbeddedGridAssets.Alpine);
 

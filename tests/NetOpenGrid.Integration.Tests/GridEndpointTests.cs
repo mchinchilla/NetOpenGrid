@@ -85,13 +85,15 @@ public class GridEndpointTests : IClassFixture<HostFactory>
         var html = await response.Content.ReadAsStringAsync();
 
         Assert.Contains("<!doctype html>", html);
-        Assert.Contains("data-netgrid-card style=\"min-height:64rem\"", html);
+        Assert.Contains("data-netgrid-card data-ng-min-height=\"64rem\"", html);
         Assert.Contains("/_netgrid/vendor/htmx.min.js?v=", html);
         Assert.Contains("/_netgrid/vendor/alpine.min.js?v=", html);
         Assert.Contains("/_netgrid/netopengrid.js?v=", html);
         Assert.Contains("/css/netopengrid-grid.css", html);
-        Assert.Contains("__NETGRID__.initial[\"employees\"]", html);
-        Assert.Contains("];__NETGRID__.locale=", html);   // state script: columns array closed before locale blob
+        var state = GridState.Of(html, "employees");
+        Assert.True(state.TryGetProperty("initial", out _));
+        Assert.Equal(System.Text.Json.JsonValueKind.Array, state.GetProperty("columns").ValueKind);   // columns array and locale blob, one JSON block
+        Assert.Equal(System.Text.Json.JsonValueKind.Object, state.GetProperty("locale").ValueKind);
         Assert.StartsWith("<tbody id=\"employees-body\" ", html[(html.IndexOf("<tbody", StringComparison.Ordinal))..]);
     }
 

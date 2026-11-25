@@ -48,7 +48,7 @@ public static class GridAssetTags
             GridThemeOverrides.Write(writer, assetOptions.BrandColor, assetOptions.ExtraStylesheets);
         }
 
-        sb.Append("<style>[x-cloak]{display:none!important}</style>");
+        // [x-cloak] lives in the theme (themes/shared/strict-csp.css): no inline <style> for a strict CSP host.
         sb.Append("<script src=\"").Append(prefix).Append("/netopengrid.js?v=")
           .Append(Assets.EmbeddedGridAssets.ClientRuntime.Version).Append("\" defer></script>");
 

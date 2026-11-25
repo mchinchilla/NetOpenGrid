@@ -155,7 +155,7 @@ public class InvalidFilterTests
 
         response.EnsureSuccessStatusCode();
         var html = await response.Content.ReadAsStringAsync();
-        var initial = Regex.Match(html, "__NETGRID__\\.initial\\[\"registers\"\\]=(\\{.*?\\});").Groups[1].Value;
+        var initial = GridState.Of(html, "registers").GetProperty("initial").GetRawText();
         var state = JsonDocument.Parse(initial).RootElement;
         Assert.Equal(0, state.GetProperty("total").GetInt32());
         Assert.Equal(["registerId"], state.GetProperty("invalidFilters").EnumerateArray().Select(e => e.GetString()));

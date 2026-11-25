@@ -30,7 +30,7 @@ public class FragmentRenderingTests : IClassFixture<GridHostFixture>
         var html = await runtime.RenderFragmentAsync(GridRequestValues.Empty);
 
         Assert.Contains("x-data=\"netgrid", html, StringComparison.Ordinal);
-        Assert.Contains("__NETGRID__", html, StringComparison.Ordinal);
+        Assert.Contains("<script type=\"application/json\" data-netgrid-state=", html, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -41,7 +41,7 @@ public class FragmentRenderingTests : IClassFixture<GridHostFixture>
 
         Assert.StartsWith("<!doctype html>", html, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("</html>", html, StringComparison.Ordinal);
-        Assert.Contains("__NETGRID__", html, StringComparison.Ordinal);
+        Assert.Contains("<script type=\"application/json\" data-netgrid-state=", html, StringComparison.Ordinal);
 
         // Pin the verified-good composition order (doctype -> head -> body -> <main> ->
         // grid root -> state script -> </main> -> </body></html>). In particular this
@@ -50,7 +50,7 @@ public class FragmentRenderingTests : IClassFixture<GridHostFixture>
         var bodyIndex = html.IndexOf("<body", StringComparison.OrdinalIgnoreCase);
         var mainIndex = html.IndexOf("<main", StringComparison.OrdinalIgnoreCase);
         var gridRootIndex = html.IndexOf("x-data=\"netgrid", StringComparison.Ordinal);
-        var stateScriptIndex = html.IndexOf("__NETGRID__", StringComparison.Ordinal);
+        var stateScriptIndex = html.IndexOf("data-netgrid-state", StringComparison.Ordinal);
         var mainCloseIndex = html.IndexOf("</main>", StringComparison.OrdinalIgnoreCase);
         var bodyCloseIndex = html.IndexOf("</body>", StringComparison.OrdinalIgnoreCase);
         var htmlCloseIndex = html.IndexOf("</html>", StringComparison.OrdinalIgnoreCase);

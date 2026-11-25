@@ -8,6 +8,30 @@
 
   const isEmptyOp = (op) => op === 'is-empty' || op === 'is-not-empty';
 
+  // Each grid ships its first-paint state as <script type="application/json" data-netgrid-state="{id}">: data the browser
+  // never runs, so a host with a strict Content-Security-Policy (script-src 'self', no nonce) needs nothing special. It is
+  // filed under window.__NETGRID__ by grid id, the shape the rest of the runtime reads. Without an id, every block on the page.
+  const readState = (id) => {
+    const ng = (window.__NETGRID__ = window.__NETGRID__ || {});
+    for (const block of document.querySelectorAll('script[type="application/json"][data-netgrid-state]')) {
+      if (id !== undefined && block.dataset.netgridState !== id) continue;
+      let state;
+      try {
+        state = JSON.parse(block.textContent);
+      } catch {
+        continue;
+      }
+
+      for (const key of ['initial', 'columns', 'filterHeaders', 'virtual', 'views']) {
+        ng[key] = ng[key] || {};
+        if (key in state) ng[key][state.id] = state[key];
+      }
+
+      ng.locale = state.locale;
+      ng.prefix = state.prefix;
+    }
+  };
+
   const splitFilterTokens = (raw) => {
     if (!raw.includes('[')) return raw.split(',');
     const tokens = [];
@@ -205,8 +229,27 @@
   // Puts server HTML into the grid and lets htmx wire any hx-* in it. Plain innerHTML + process works the
   // same with htmx 2 (swap(target, html, spec)) and htmx 4 (swap(ctx)), whose swap APIs differ; Alpine's
   // own mutation observer initializes any x-data in the new nodes.
+  // Sizes the server sends as data-ng-* (a host's min height, the virtual-scroll height, spacer rows): applied through
+  // CSSOM, which a strict Content-Security-Policy allows, where a style attribute in the markup would be dropped.
+  const applySizes = (root) => {
+    if (!root) return;
+    const targets = root.matches?.('[data-ng-height], [data-ng-min-height]') ? [root] : [];
+    targets.push(...root.querySelectorAll('[data-ng-height], [data-ng-min-height]'));
+    for (const el of targets) {
+      if (el.dataset.ngHeight) el.style.height = el.dataset.ngHeight;
+      if (el.dataset.ngMinHeight) el.style.minHeight = el.dataset.ngMinHeight;
+    }
+  };
+
+  // The brand colour arrives as <meta name="netgrid-brand"> (an inline <style> would break a strict CSP).
+  const applyBrand = () => {
+    const brand = document.querySelector('meta[name="netgrid-brand"]')?.content;
+    if (brand) document.documentElement.style.setProperty('--ng-brand', brand);
+  };
+
   const swapHtml = (target, html) => {
     target.innerHTML = html;
+    applySizes(target);
     if (typeof htmx !== 'undefined' && typeof htmx.process === 'function') htmx.process(target);
   };
 
@@ -263,7 +306,8 @@
     }
   }
 
-  document.addEventListener('alpine:init', () => {
+  // Registered whether this script runs before Alpine starts (alpine:init) or after (a host that loads it later).
+  const register = () => {
     Alpine.data('netgrid', (id) => ({
       id,
       q: '',
@@ -425,6 +469,8 @@
       },
 
       init() {
+        readState(id);
+        applySizes(this.$el);
         const initial = window.__NETGRID__?.initial?.[id];
         if (initial) {
           const { filterLabels, invalidFilters, ...meta } = initial;
@@ -453,15 +499,19 @@
         this.syncRoving(false);
         this.loadColumnWidths();
 
-        window.addEventListener('resize', () => this.applyPinnedOffsets());
+        // Every listener outside the grid's own markup goes away with the component (destroy): a host that swaps pages
+        // with htmx starts a new grid on each visit, and the old one must not keep answering window/document events.
+        this.listeners = new AbortController();
+        const { signal } = this.listeners;
+        window.addEventListener('resize', () => this.applyPinnedOffsets(), { signal });
 
         // The filter popover is position:fixed (see positionPopover), so it must follow its
         // header when the page, the card or any ancestor scrolls, and when the viewport resizes.
         const followPopover = () => {
           if (this.editing !== null) this.positionPopover(this.editing);
         };
-        window.addEventListener('resize', followPopover);
-        window.addEventListener('scroll', followPopover, { capture: true, passive: true });
+        window.addEventListener('resize', followPopover, { signal });
+        window.addEventListener('scroll', followPopover, { capture: true, passive: true, signal });
 
         if (this.isVirtual()) {
           // The server's first render is block 0 only when it used the block size on page 1
@@ -482,7 +532,7 @@
           this.dragField = null;
           this.dragGroupField = null;
           this.groupDropActive = false;
-        });
+        }, { signal });
 
         // What the host page may ask for (see HOST_EVENTS). A message without `grid` goes to every
         // grid in this document.
@@ -510,13 +560,13 @@
           }
         };
         for (const type of HOST_EVENTS) {
-          document.addEventListener(type, (e) => onHostMessage(type, e.detail));
+          document.addEventListener(type, (e) => onHostMessage(type, e.detail), { signal });
         }
         // Only a same-origin window is listened to: anything else is dropped unread.
         window.addEventListener('message', (e) => {
           if (e.origin !== window.location.origin) return;
           if (HOST_EVENTS.includes(e.data?.type)) onHostMessage(e.data.type, e.data);
-        });
+        }, { signal });
         nextFrame(() => this.applyPinnedOffsets());
 
         // The shell server-renders flat rows in the default column order. A saved/linked column
@@ -1084,6 +1134,13 @@
         return this.refresh();
       },
 
+      // One method per handler: the Alpine CSP build evaluates a single expression (no "a(); b = c") and forbids assigning
+      // DOM properties from markup, so the group select is reset here.
+      pickGroupBy(event) {
+        this.addGroupBy(event.target.value);
+        event.target.value = '';
+      },
+
       addGroupBy(field) {
         if (!field || this.groupBy.includes(field) || this.groupBy.length >= 3) return;
         this.groupBy.push(field);
@@ -1187,6 +1244,11 @@
 
       // Downloads the whole filtered set (every page) in the current view: sort, filters,
       // column order and hidden columns all travel in the query.
+      exportFromMenu(format) {
+        this.exportMenu = false;
+        return this.exportAs(format);
+      },
+
       exportAs(format) {
         const params = toParams(this, null);
         params.delete('page');
@@ -1629,6 +1691,7 @@
       // it work, and Alpine picks up any x-data on its own.
       fillDetail(panel, html) {
         panel.innerHTML = html;
+        applySizes(panel);
         if (typeof htmx !== 'undefined') htmx.process(panel);
         this.remeasureVirtual();
       },
@@ -1824,7 +1887,7 @@
 
         const span = this.headerCells().length || 1;
         const spacer = (height) => height > 0
-          ? `<tr data-spacer aria-hidden="true"><td colspan="${span}" style="height:${Math.round(height)}px;padding:0;border:0"></td></tr>`
+          ? `<tr data-spacer aria-hidden="true"><td colspan="${span}" class="ng-spacer" data-ng-height="${Math.round(height)}px"></td></tr>`
           : '';
 
         let above = 0;
@@ -2118,6 +2181,12 @@
         await this.refresh();
       },
 
+      clearEditingFilter() {
+        const field = this.editing;
+        this.cancelEditing();
+        return this.clearFilter(field);
+      },
+
       async clearFilter(field) {
         if (field === null || field === undefined) return;
         delete this.filters[field];
@@ -2234,6 +2303,11 @@
         }
       },
 
+      // Alpine calls it when the component's tree is removed (an htmx swap through alpine-compat, a page change).
+      destroy() {
+        this.listeners?.abort();
+      },
+
       toggleTheme() {
         const dark = document.documentElement.classList.toggle('dark');
         try {
@@ -2243,5 +2317,15 @@
         }
       }
     }));
-  });
+  };
+
+  if (window.Alpine) {
+    register();
+  } else {
+    document.addEventListener('alpine:init', register);
+  }
+
+  // Global state (prefix, locale) before any grid starts: PREFIX() is read outside the component too.
+  readState();
+  applyBrand();
 })();

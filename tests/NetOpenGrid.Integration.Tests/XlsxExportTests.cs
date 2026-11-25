@@ -123,8 +123,9 @@ public class XlsxExportTests
         var client = host.GetTestClient();
 
         var both = await client.GetStringAsync("/netgrid/items");
-        Assert.Contains("exportAs('csv')", both);
-        Assert.Contains("exportAs('xlsx')", both);
+        // The menu closes and exports in one method (the Alpine CSP build evaluates a single expression).
+        Assert.Contains("exportFromMenu('csv')", both);
+        Assert.Contains("exportFromMenu('xlsx')", both);
         Assert.Contains("aria-controls=\"items-export\"", both);
 
         var csvOnly = await client.GetStringAsync("/netgrid/csvonly");

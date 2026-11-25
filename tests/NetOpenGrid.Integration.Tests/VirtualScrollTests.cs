@@ -54,10 +54,10 @@ public class VirtualScrollTests
         using var host = await BuildHostAsync();
         var html = await host.GetTestClient().GetStringAsync("/netgrid/items");
 
-        Assert.Contains("data-netgrid-card data-virtual @scroll.passive=\"onVirtualScroll()\" style=\"overflow-anchor:none;height:60vh\"", html);
+        Assert.Contains("data-netgrid-card data-virtual @scroll.passive=\"onVirtualScroll()\" data-ng-height=\"60vh\"", html);
         Assert.Contains("[&_thead_th]:sticky [&_thead_th]:top-0", html);
         Assert.Contains("x-show=\"!isVirtual()\"", html);
-        Assert.Contains("__NETGRID__.virtual[\"items\"]={\"blockSize\":20}", html);
+        Assert.Equal(20, GridState.Of(html, "items").GetProperty("virtual").GetProperty("blockSize").GetInt32());
         Assert.Equal(20, Regex.Matches(html, "data-row=\"").Count);        // first render is block 0
     }
 
@@ -69,7 +69,7 @@ public class VirtualScrollTests
 
         Assert.DoesNotContain("data-virtual", html);
         Assert.DoesNotContain("data-row=\"", html);
-        Assert.Contains("__NETGRID__.virtual[\"paged\"]=null", html);
+        Assert.Equal(System.Text.Json.JsonValueKind.Null, GridState.Of(html, "paged").GetProperty("virtual").ValueKind);
     }
 
     [Fact]

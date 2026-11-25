@@ -302,7 +302,8 @@ public class BulkActionsRenderingTests
         var js = Js();
 
         Assert.Contains("const HOST_EVENTS = ['netgrid:refresh', 'netgrid:clear-selection', 'netgrid:busy'];", js);
-        Assert.Contains("document.addEventListener(type, (e) => onHostMessage(type, e.detail));", js);
+        // Tied to the component's lifetime (destroy aborts it): a host that swaps pages with htmx keeps no stale listener.
+        Assert.Contains("document.addEventListener(type, (e) => onHostMessage(type, e.detail), { signal });", js);
         Assert.Contains("if (HOST_EVENTS.includes(e.data?.type)) onHostMessage(e.data.type, e.data);", js);
         Assert.Contains("if (data?.grid && data.grid !== this.id) return;", js);
 

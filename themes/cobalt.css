@@ -6,6 +6,8 @@
 /* Bulk action buttons of the selection bar. */
 @import "./shared/bulk-actions.css";
 @import "./shared/filter-chips.css";
+/* What used to be inline <style> and style="" (strict Content-Security-Policy). */
+@import "./shared/strict-csp.css";
 
 @custom-variant dark (&:where(.dark, .dark *));
 

@@ -20,7 +20,7 @@ public class SavedViewsRenderingTests
         using var host = await BuildHostAsync();
         var html = await host.GetTestClient().GetStringAsync("/netgrid/items");
 
-        Assert.Contains("__NETGRID__.views[\"items\"]=[{\"name\":\"Delivered\",\"query\":\"filter=status:equals:delivered\\u0026sort=total:desc\"}", html);
+        Assert.Contains("\"views\":[{\"name\":\"Delivered\",\"query\":\"filter=status:equals:delivered\\u0026sort=total:desc\"}", html);
         Assert.DoesNotContain("</script><b>", html);                     // a view name cannot close the script
         Assert.Contains("\\u003C/script\\u003E\\u003Cb\\u003E", html);
     }
@@ -55,7 +55,7 @@ public class SavedViewsRenderingTests
         var html = await host.GetTestClient().GetStringAsync("/netgrid/plain");
 
         Assert.DoesNotContain("-views\"", html);
-        Assert.Contains("__NETGRID__.views[\"plain\"]=[]", html);
+        Assert.Equal(0, GridState.Of(html, "plain").GetProperty("views").GetArrayLength());
     }
 
     [Fact]

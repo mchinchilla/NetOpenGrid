@@ -19,6 +19,9 @@ public static class EmbeddedGridAssets
     private const string CssContentType = "text/css; charset=utf-8";
 
     public static readonly EmbeddedAsset ClientRuntime = Load("netopengrid.js", JavaScriptContentType);
+
+    /// <summary>Dark mode before the first paint of a grid document (a file, not an inline script: strict CSP).</summary>
+    public static readonly EmbeddedAsset ThemeBoot = Load("netopengrid-theme.js", JavaScriptContentType);
     public static readonly EmbeddedAsset Htmx = Load("vendor/htmx.min.js", JavaScriptContentType);
     public static readonly EmbeddedAsset Alpine = Load("vendor/alpine.min.js", JavaScriptContentType);
 

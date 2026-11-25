@@ -31,7 +31,7 @@ public class RowDetailRenderingTests
 
         Assert.Matches("<tr class=\"cursor-pointer [^\"]*\" data-id=\"a&amp;1\" data-detail=\"/calls/a&amp;1/detail\">", row);
         Assert.Contains(
-            "<td data-pin=\"__detail\" style=\"left:0\" class=\"ng-detail-cell\"><button type=\"button\" class=\"ng-detail-toggle\" data-detail-toggle aria-expanded=\"false\" aria-label=\"Show or hide detail\"></button></td>",
+            "<td data-pin=\"__detail\" class=\"ng-detail-cell left-0\"><button type=\"button\" class=\"ng-detail-toggle\" data-detail-toggle aria-expanded=\"false\" aria-label=\"Show or hide detail\"></button></td>",
             row);
         Assert.DoesNotContain("<svg", row);                              // the chevron is CSS, not per-row markup
     }
@@ -47,7 +47,7 @@ public class RowDetailRenderingTests
             Assert.DoesNotContain("data-detail", row);
             Assert.DoesNotContain("javascript:", row);
             Assert.DoesNotContain("cursor-pointer", Regex.Match(row, "<tr[^>]*>").Value);
-            Assert.Contains("<td data-pin=\"__detail\" style=\"left:0\" class=\"ng-detail-cell\"></td>", row);
+            Assert.Contains("<td data-pin=\"__detail\" class=\"ng-detail-cell left-0\"></td>", row);
         }
     }
 

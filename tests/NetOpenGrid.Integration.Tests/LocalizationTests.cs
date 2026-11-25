@@ -65,7 +65,7 @@ public class LocalizationTests
         Assert.Contains("Aplicar", html);
         Assert.Contains("Seleccionar todo", html);
         Assert.Contains("Buscar...", html);
-        Assert.Contains("__NETGRID__.locale=", html);
+        Assert.Matches("data-netgrid-state=\"[^\"]+\">[^<]*\"locale\":\\{", html);
         Assert.Contains("\"ops.contains\":\"contiene\"", html);
     }
 

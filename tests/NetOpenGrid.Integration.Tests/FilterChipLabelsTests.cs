@@ -90,7 +90,7 @@ public class FilterChipLabelsTests
         var html = await host.GetTestClient().GetStringAsync("/netgrid/movs");
 
         // Localized like the visible headers ("Sesión" goes through TextLocalizer), HTML-safe JSON.
-        var headers = Regex.Match(html, "__NETGRID__\\.filterHeaders\\[\"movs\"\\]=(\\{.*?\\});").Groups[1].Value;
+        var headers = GridState.Of(html, "movs").GetProperty("filterHeaders").GetRawText();
         var map = JsonSerializer.Deserialize<Dictionary<string, string>>(headers)!;
         Assert.Equal(new Dictionary<string, string> { ["sessionId"] = "[Sesión]", ["naturaleza"] = "[Naturaleza]" }, map);
         Assert.DoesNotContain("note", map.Keys);   // hidden but not filterable
@@ -102,7 +102,7 @@ public class FilterChipLabelsTests
         using var host = await BuildHostAsync(new Probe());
         var html = await host.GetTestClient().GetStringAsync("/netgrid/movs");
 
-        var columns = Regex.Match(html, "__NETGRID__\\.columns\\[\"movs\"\\]=(\\[.*?\\]);").Groups[1].Value;
+        var columns = GridState.Of(html, "movs").GetProperty("columns").GetRawText();
         var fields = JsonDocument.Parse(columns).RootElement.EnumerateArray().Select(c => c.GetProperty("field").GetString());
         Assert.Equal(["id", "status", "amount"], fields);
 
@@ -127,7 +127,7 @@ public class FilterChipLabelsTests
         using var host = await BuildHostAsync(probe);
         var html = await host.GetTestClient().GetStringAsync($"/netgrid/movs?filter=sessionId:equals:{SessionA}");
 
-        var initial = Regex.Match(html, "__NETGRID__\\.initial\\[\"movs\"\\]=(\\{.*?\\});__NETGRID__\\.filterHeaders").Groups[1].Value;
+        var initial = GridState.Of(html, "movs").GetProperty("initial").GetRawText();
         var labels = JsonDocument.Parse(initial).RootElement.GetProperty("filterLabels");
         Assert.Equal("SES-2026-00000a", labels.GetProperty("sessionId").GetProperty(SessionA.ToString()).GetString());
 

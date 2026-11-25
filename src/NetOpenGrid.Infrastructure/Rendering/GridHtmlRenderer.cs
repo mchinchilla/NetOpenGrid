@@ -53,8 +53,6 @@ public sealed class GridHtmlRenderer<TItem>
     private const string SpinnerIcon =
         "<svg xmlns=\"http://www.w3.org/2000/svg\" fill=\"none\" viewBox=\"0 0 24 24\" class=\"h-5 w-5 animate-spin text-brand-600 dark:text-brand-400\"><circle class=\"opacity-25\" cx=\"12\" cy=\"12\" r=\"10\" stroke=\"currentColor\" stroke-width=\"4\"></circle><path class=\"opacity-75\" fill=\"currentColor\" d=\"M4 12a8 8 0 0 1 8-8v4a4 4 0 0 0-4 4H4z\"></path></svg>";
 
-    private const string ThemeBootScript =
-        "<script>(function(){try{var t=localStorage.getItem('netgrid:theme');var d=t?t==='dark':window.matchMedia('(prefers-color-scheme: dark)').matches;if(d){document.documentElement.classList.add('dark');}}catch(e){}})();</script>";
 
 
     private readonly GridOptions<TItem> _options;
@@ -196,9 +194,9 @@ public sealed class GridHtmlRenderer<TItem>
             AppendEncoded(w, group.Path);
             w.Write("\"><td colspan=\"");
             w.Write(ColumnSpan(columns).ToString(CultureInfo.InvariantCulture));
-            w.Write("\" class=\"px-4 py-2 text-xs text-neutral-500 dark:text-neutral-400\" style=\"padding-left:");
-            w.Write((GroupIndent(group.Level) + 16).ToString(CultureInfo.InvariantCulture));
-            w.Write("px\">");
+            w.Write("\" class=\"px-4 py-2 text-xs text-neutral-500 dark:text-neutral-400 ");
+            w.Write(GroupIndentClass(group.Level, rows: true));
+            w.Write("\">");
             AppendEncoded(w, L("group.rows.truncated")
                 .Replace("{shown}", group.Rows.Count.ToString("N0", CultureInfo.CurrentCulture))
                 .Replace("{total}", group.Count.ToString("N0", CultureInfo.CurrentCulture)));
@@ -212,9 +210,9 @@ public sealed class GridHtmlRenderer<TItem>
             w.Write("\">");
             AppendAggregateCells(w, columns, group.Aggregates, "py-2", () =>
             {
-                w.Write("<div class=\"text-xs font-medium text-neutral-500 dark:text-neutral-400\" style=\"padding-left:");
-                w.Write(GroupIndent(group.Level).ToString(CultureInfo.InvariantCulture));
-                w.Write("px\">");
+                w.Write("<div class=\"text-xs font-medium text-neutral-500 dark:text-neutral-400 ");
+                w.Write(GroupIndentClass(group.Level, rows: false));
+                w.Write("\">");
                 AppendEncoded(w, L("agg.subtotal"));
                 w.Write(' ');
                 AppendEncoded(w, GroupLabel(group));
@@ -226,13 +224,26 @@ public sealed class GridHtmlRenderer<TItem>
 
     private string GroupLabel(GridGroup<TItem> group) => group.Label.Length == 0 ? L("group.blank") : group.Label;
 
-    private static int GroupIndent(int level) => 8 + level * 20;
+    /// <summary>
+    /// Indentation of a group level (8px + 20px per level; +16px for the "rows truncated" note) as a class from
+    /// themes/shared/strict-csp.css instead of a style attribute: a strict Content-Security-Policy (style-src 'self') drops
+    /// those. Grouping goes three levels deep (0..2); deeper levels reuse the last class.
+    /// </summary>
+    private static string GroupIndentClass(int level, bool rows) => (Math.Clamp(level, 0, 2), rows) switch
+    {
+        (0, false) => "ng-indent-0",
+        (1, false) => "ng-indent-1",
+        (2, false) => "ng-indent-2",
+        (0, true) => "ng-indent-0-rows",
+        (1, true) => "ng-indent-1-rows",
+        _ => "ng-indent-2-rows",
+    };
 
     private void AppendGroupLabel(TextWriter w, GridGroup<TItem> group, bool expanded)
     {
-        w.Write("<div class=\"flex items-center gap-2\" style=\"padding-left:");
-        w.Write(GroupIndent(group.Level).ToString(CultureInfo.InvariantCulture));
-        w.Write("px\">");
+        w.Write("<div class=\"flex items-center gap-2 ");
+        w.Write(GroupIndentClass(group.Level, rows: false));
+        w.Write("\">");
 
         w.Write("<button type=\"button\" class=\"inline-flex cursor-pointer items-center text-neutral-500 transition hover:text-brand-600 dark:hover:text-brand-400\" @click=\"toggleGroup(");
         AppendJsQuoted(w, group.Path);
@@ -346,7 +357,7 @@ public sealed class GridHtmlRenderer<TItem>
             // Under a pinned actions column the empty cell must stick too, or the scrolled
             // columns show through it.
             w.Write(_options.RowActionsPinned
-                ? "<td data-pin-right=\"__actions\" style=\"right:0\" class=\"sticky z-10 border-l border-neutral-200 bg-neutral-50 dark:border-neutral-800 dark:bg-[color:color-mix(in_oklab,var(--color-neutral-800)_60%,var(--color-neutral-900))]\"></td>"
+                ? "<td data-pin-right=\"__actions\" class=\"right-0 sticky z-10 border-l border-neutral-200 bg-neutral-50 dark:border-neutral-800 dark:bg-[color:color-mix(in_oklab,var(--color-neutral-800)_60%,var(--color-neutral-900))]\"></td>"
                 : "<td></td>");
         }
     }
@@ -575,12 +586,18 @@ public sealed class GridHtmlRenderer<TItem>
 
         w.Write("<!doctype html><html lang=\"");
         AppendEncoded(w, _locale.LanguageTag);
-        w.Write("\"><head><meta charset=\"utf-8\">");
+        w.Write(embedded ? "\" class=\"ng-embedded\"><head>" : "\"><head>");
+        w.Write("<meta charset=\"utf-8\">");
         w.Write("<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">");
         w.Write("<title>");
         AppendEncoded(w, T(_options.Title));
         w.Write("</title>");
-        w.Write(ThemeBootScript);
+        // Dark mode before the first paint: a blocking file (not an inline script) so a strict CSP allows it.
+        w.Write("<script src=\"");
+        w.Write(prefix);
+        w.Write("/netopengrid-theme.js?v=");
+        w.Write(Assets.EmbeddedGridAssets.ThemeBoot.Version);
+        w.Write("\"></script>");
         w.Write("<link rel=\"stylesheet\" href=\"");
         if (_assetOptions.NormalizedCssPath is { } cssPath)
         {
@@ -613,11 +630,8 @@ public sealed class GridHtmlRenderer<TItem>
             _assetOptions.ExtraStylesheets,
             _options.Stylesheets);
 
-        w.Write("<style>[x-cloak]{display:none!important}</style>");
-        if (embedded)
-        {
-            w.Write("<style>html,body{background:transparent!important;margin:0}</style>");
-        }
+        // [x-cloak] and the transparent embedded background live in the theme (themes/shared/strict-csp.css): no inline
+        // <style>, so the document loads under a strict Content-Security-Policy.
 
         w.Write("<script src=\"");
         w.Write(prefix);
@@ -724,7 +738,7 @@ public sealed class GridHtmlRenderer<TItem>
 
         w.Write("<select aria-label=\"");
         w.Write(L("group.aria"));
-        w.Write("\" @change=\"addGroupBy($event.target.value); $event.target.value = ''\" class=\"input-base !w-auto py-2 text-sm\">");
+        w.Write("\" @change=\"pickGroupBy($event)\" class=\"input-base !w-auto py-2 text-sm\">");
         w.Write("<option value=\"\">");
         w.Write(L("group.placeholder"));
         w.Write("</option>");
@@ -803,7 +817,7 @@ public sealed class GridHtmlRenderer<TItem>
 
         foreach (var (format, key) in new[] { ("csv", "export.csv"), ("xlsx", "export.xlsx") })
         {
-            w.Write("<button type=\"button\" class=\"flex w-full cursor-pointer items-center rounded-md px-2 py-1.5 text-left text-sm hover:bg-neutral-100 dark:hover:bg-neutral-800\" @click=\"exportMenu = false; exportAs('");
+            w.Write("<button type=\"button\" class=\"flex w-full cursor-pointer items-center rounded-md px-2 py-1.5 text-left text-sm hover:bg-neutral-100 dark:hover:bg-neutral-800\" @click=\"exportFromMenu('");
             w.Write(format);
             w.Write("')\">");
             w.Write(L(key));
@@ -883,7 +897,9 @@ public sealed class GridHtmlRenderer<TItem>
             w.Write("<button type=\"button\" class=\"cursor-pointer rounded-md px-1.5 py-1 text-neutral-400 hover:bg-neutral-100 hover:text-red-600 dark:hover:bg-neutral-800 dark:hover:text-red-400\" :aria-label=\"deleteViewLabel(view.name)\" @click=\"deleteView(view.name)\">&times;</button>");
             w.Write("</div></template>");
 
-            w.Write("<form class=\"mt-2 flex gap-1.5 border-t border-neutral-100 pt-2 dark:border-neutral-800\" @submit.prevent=\"saveCurrentView()\">");
+            // hx-boost="false": a host whose <body hx-boost="true"> (htmx) would otherwise submit this form itself and swap the
+            // whole page. The grid handles it (Alpine); without htmx the attribute does nothing.
+            w.Write("<form class=\"mt-2 flex gap-1.5 border-t border-neutral-100 pt-2 dark:border-neutral-800\" hx-boost=\"false\" @submit.prevent=\"saveCurrentView()\">");
             w.Write("<input type=\"text\" class=\"input-base !py-1\" maxlength=\"60\" x-model=\"viewName\" placeholder=\"");
             w.Write(L("views.placeholder"));
             w.Write("\" aria-label=\"");
@@ -1005,13 +1021,14 @@ public sealed class GridHtmlRenderer<TItem>
             // The card is the scroll viewport; the pager is replaced by scrolling. Browser scroll
             // anchoring is off: when blocks are swapped (and the focused row leaves the DOM) Chrome
             // would otherwise "keep its place" by jumping to the end of the spacers.
-            w.Write(" data-virtual @scroll.passive=\"onVirtualScroll()\" style=\"overflow-anchor:none;height:");
+            // Sizes travel as data and netopengrid.js applies them (CSSOM): style attributes break a strict CSP.
+            w.Write(" data-virtual @scroll.passive=\"onVirtualScroll()\" data-ng-height=\"");
             AppendEncoded(w, virtualScroll.Height);
             w.Write('"');
         }
         else if (_options.MinHeight.Length > 0)
         {
-            w.Write(" style=\"min-height:");
+            w.Write(" data-ng-min-height=\"");
             AppendEncoded(w, _options.MinHeight);
             w.Write('"');
         }
@@ -1043,7 +1060,7 @@ public sealed class GridHtmlRenderer<TItem>
 
         if (_options.HasRowDetail)
         {
-            w.Write("<th scope=\"col\" data-pin=\"__detail\" style=\"left:0\" class=\"sticky z-30 w-10 border-r border-neutral-200 bg-neutral-50 px-2 py-3 dark:border-neutral-800 dark:bg-[color:color-mix(in_oklab,var(--color-neutral-800)_60%,var(--color-neutral-900))]\"><span class=\"sr-only\">");
+            w.Write("<th scope=\"col\" data-pin=\"__detail\" class=\"left-0 sticky z-30 w-10 border-r border-neutral-200 bg-neutral-50 px-2 py-3 dark:border-neutral-800 dark:bg-[color:color-mix(in_oklab,var(--color-neutral-800)_60%,var(--color-neutral-900))]\"><span class=\"sr-only\">");
             AppendEncoded(w, L("detail.header"));
             w.Write("</span></th>");
         }
@@ -1052,7 +1069,7 @@ public sealed class GridHtmlRenderer<TItem>
         {
             // Pinned header cells need an opaque background: the thead's translucent one lets the
             // columns scrolling underneath show through. Same colour, mixed over the card.
-            w.Write("<th scope=\"col\" data-pin=\"__select\" style=\"left:0\" class=\"sticky z-30 w-10 border-r border-neutral-200 bg-neutral-50 px-4 py-3 dark:border-neutral-800 dark:bg-[color:color-mix(in_oklab,var(--color-neutral-800)_60%,var(--color-neutral-900))]\">");
+            w.Write("<th scope=\"col\" data-pin=\"__select\" class=\"left-0 sticky z-30 w-10 border-r border-neutral-200 bg-neutral-50 px-4 py-3 dark:border-neutral-800 dark:bg-[color:color-mix(in_oklab,var(--color-neutral-800)_60%,var(--color-neutral-900))]\">");
             w.Write("<input type=\"checkbox\" class=\"h-4 w-4 accent-brand-600\" aria-label=\"");
         w.Write(L("select.all.aria"));
         w.Write("\" :checked=\"allPageSelected\" @change=\"togglePageAll($event.target.checked)\">");
@@ -1087,7 +1104,7 @@ public sealed class GridHtmlRenderer<TItem>
             {
                 w.Write("\" data-pin=\"");
                 AppendEncoded(w, column.Field);
-                w.Write("\" style=\"left:0\" class=\"");
+                w.Write("\" class=\"left-0 ");
                 w.Write(ResponsiveClass(column.HideBelow));
                 w.Write("sticky z-30 relative border-r border-neutral-200 bg-neutral-50 dark:border-neutral-800 dark:bg-[color:color-mix(in_oklab,var(--color-neutral-800)_60%,var(--color-neutral-900))] ");
             }
@@ -1095,7 +1112,7 @@ public sealed class GridHtmlRenderer<TItem>
             {
                 w.Write("\" data-pin-right=\"");
                 AppendEncoded(w, column.Field);
-                w.Write("\" style=\"right:0\" class=\"");
+                w.Write("\" class=\"right-0 ");
                 w.Write(ResponsiveClass(column.HideBelow));
                 w.Write("sticky z-30 relative border-l border-neutral-200 bg-neutral-50 dark:border-neutral-800 dark:bg-[color:color-mix(in_oklab,var(--color-neutral-800)_60%,var(--color-neutral-900))] ");
             }
@@ -1203,7 +1220,7 @@ public sealed class GridHtmlRenderer<TItem>
         if (_options.HasRowActions)
         {
             w.Write(_options.RowActionsPinned
-                ? "<th scope=\"col\" data-actions data-pin-right=\"__actions\" style=\"right:0\" class=\"sticky z-30 border-l border-neutral-200 bg-neutral-50 px-4 py-3 text-right font-medium text-neutral-600 select-none dark:border-neutral-800 dark:bg-[color:color-mix(in_oklab,var(--color-neutral-800)_60%,var(--color-neutral-900))] dark:text-neutral-300\">"
+                ? "<th scope=\"col\" data-actions data-pin-right=\"__actions\" class=\"right-0 sticky z-30 border-l border-neutral-200 bg-neutral-50 px-4 py-3 text-right font-medium text-neutral-600 select-none dark:border-neutral-800 dark:bg-[color:color-mix(in_oklab,var(--color-neutral-800)_60%,var(--color-neutral-900))] dark:text-neutral-300\">"
                 : "<th scope=\"col\" data-actions class=\"px-4 py-3 text-right font-medium text-neutral-600 select-none dark:text-neutral-300\">");
             AppendEncoded(w, _options.RowActionsHeader is { } header ? T(header) : L("actions.header"));
             w.Write("</th>");
@@ -1223,7 +1240,7 @@ public sealed class GridHtmlRenderer<TItem>
         AppendJsQuoted(w, column.Field);
         w.Write("\" x-cloak @click.outside=\"cancelEditing()\" data-popover=\"");
         AppendEncoded(w, column.Field);
-        w.Write("\" style=\"position:fixed\" class=\"z-30 w-64 space-y-3 rounded-xl border border-neutral-200 bg-white p-3 text-left shadow-xl dark:border-neutral-700 dark:bg-neutral-900\">");
+        w.Write("\" class=\"fixed z-30 w-64 space-y-3 rounded-xl border border-neutral-200 bg-white p-3 text-left shadow-xl dark:border-neutral-700 dark:bg-neutral-900\">");
         w.Write("<div class=\"text-xs font-semibold tracking-wide text-neutral-500 uppercase\" x-text=\"editingLabel\"></div>");
 
         if (IsListMode(column))
@@ -1236,7 +1253,7 @@ public sealed class GridHtmlRenderer<TItem>
         }
 
         w.Write("<div class=\"flex justify-end gap-2 pt-1\">");
-        w.Write("<button type=\"button\" class=\"btn-ghost-sm\" @click=\"clearFilter(editing); cancelEditing()\">");
+        w.Write("<button type=\"button\" class=\"btn-ghost-sm\" @click=\"clearEditingFilter()\">");
         w.Write(L("filter.clear"));
         w.Write("</button>");
         w.Write("<button type=\"button\" class=\"btn-primary-sm\" @click=\"applyFilter()\">");
@@ -1382,7 +1399,8 @@ public sealed class GridHtmlRenderer<TItem>
             w.Write("</span></button>");
         }
 
-        w.Write("<form method=\"post\" :action=\"");
+        // hx-boost="false": in a boosted host htmx would post this through ajax and swap the page instead of downloading.
+        w.Write("<form method=\"post\" hx-boost=\"false\" :action=\"");
         AppendJsQuoted(w, _assetOptions.RoutePrefix);
         w.Write(" + '/' + id + '/export'\" class=\"contents\">");
         w.Write("<input type=\"hidden\" name=\"ids\" :value=\"selected.join(',')\">");
@@ -1405,7 +1423,7 @@ public sealed class GridHtmlRenderer<TItem>
 
             if (_options.MinHeight.Length > 0)
             {
-                w.Write("\" style=\"height:");
+                w.Write("\" data-ng-height=\"");
                 AppendEncoded(w, _options.MinHeight);
             }
 
@@ -1527,7 +1545,7 @@ public sealed class GridHtmlRenderer<TItem>
         {
             // One short class per cell (themes/shared/row-detail.css): this markup repeats on every
             // row, so it stays small; netopengrid.js only flips aria-expanded.
-            w.Write("<td data-pin=\"__detail\" style=\"left:0\" class=\"ng-detail-cell\">");
+            w.Write("<td data-pin=\"__detail\" class=\"ng-detail-cell left-0\">");
             if (detailUrl is not null)
             {
                 w.Write("<button type=\"button\" class=\"ng-detail-toggle\" data-detail-toggle aria-expanded=\"false\" aria-label=\"");
@@ -1541,7 +1559,7 @@ public sealed class GridHtmlRenderer<TItem>
         // The cell is always there (the header has one); only its checkbox depends on the row.
         if (_options.EnableRowSelection && _options.RowKey is not null)
         {
-            w.Write("<td data-pin=\"__select\" style=\"left:0\" class=\"sticky left-0 z-10 w-10 border-r border-neutral-100 bg-white px-4 py-2 align-middle hover:bg-brand-50/40 dark:border-neutral-800/60 dark:bg-neutral-900 dark:hover:bg-white/[0.04]\">");
+            w.Write("<td data-pin=\"__select\" class=\"left-0 sticky left-0 z-10 w-10 border-r border-neutral-100 bg-white px-4 py-2 align-middle hover:bg-brand-50/40 dark:border-neutral-800/60 dark:bg-neutral-900 dark:hover:bg-white/[0.04]\">");
             if (rowKey is not null)
             {
                 w.Write("<input type=\"checkbox\" class=\"h-4 w-4 accent-brand-600\" aria-label=\"");
@@ -1572,7 +1590,7 @@ public sealed class GridHtmlRenderer<TItem>
             {
                 w.Write(" data-pin=\"");
                 AppendEncoded(w, column.Field);
-                w.Write("\" style=\"left:0\" class=\"");
+                w.Write("\" class=\"left-0 ");
                 w.Write(ResponsiveClass(column.HideBelow));
                 w.Write("sticky z-10 border-r border-neutral-100 bg-white hover:bg-brand-50/40 dark:border-neutral-800/60 dark:bg-neutral-900 dark:hover:bg-white/[0.04]");
             }
@@ -1580,7 +1598,7 @@ public sealed class GridHtmlRenderer<TItem>
             {
                 w.Write(" data-pin-right=\"");
                 AppendEncoded(w, column.Field);
-                w.Write("\" style=\"right:0\" class=\"");
+                w.Write("\" class=\"right-0 ");
                 w.Write(ResponsiveClass(column.HideBelow));
                 w.Write("sticky z-10 border-l border-neutral-100 bg-white hover:bg-brand-50/40 dark:border-neutral-800/60 dark:bg-neutral-900 dark:hover:bg-white/[0.04]");
             }
@@ -1621,7 +1639,7 @@ public sealed class GridHtmlRenderer<TItem>
     private void AppendRowActions(TextWriter w, TItem item)
     {
         w.Write(_options.RowActionsPinned
-            ? "<td data-actions data-pin-right=\"__actions\" style=\"right:0\" class=\"sticky z-10 whitespace-nowrap border-l border-neutral-100 bg-white px-4 py-2.5 text-right align-middle dark:border-neutral-800/60 dark:bg-neutral-900\"><div class=\"inline-flex items-center gap-3\">"
+            ? "<td data-actions data-pin-right=\"__actions\" class=\"right-0 sticky z-10 whitespace-nowrap border-l border-neutral-100 bg-white px-4 py-2.5 text-right align-middle dark:border-neutral-800/60 dark:bg-neutral-900\"><div class=\"inline-flex items-center gap-3\">"
             : "<td data-actions class=\"whitespace-nowrap px-4 py-2.5 text-right align-middle\"><div class=\"inline-flex items-center gap-3\">");
 
         string? key = null;
@@ -1692,19 +1710,25 @@ public sealed class GridHtmlRenderer<TItem>
         w.Write("</div></td>");
     }
 
+    /// <summary>
+    /// The grid's first-paint state as a data block (<c>&lt;script type="application/json"&gt;</c>): the browser never runs it,
+    /// so a host with a strict Content-Security-Policy (<c>script-src 'self'</c>, no nonce) loads it as is. netopengrid.js reads
+    /// it when the component starts (<c>readState</c>) and files each part under <c>window.__NETGRID__</c> by grid id. Every
+    /// string goes through <see cref="JsonEncodedText"/> / <see cref="JsonSerializer"/>, which escape <c>&lt;</c>, <c>&gt;</c>
+    /// and <c>&amp;</c>: a title or filter label can never close the block.
+    /// </summary>
     private void AppendStateScript(
         TextWriter w,
         PageResult<TItem> page,
         IReadOnlyDictionary<string, IReadOnlyDictionary<string, string>>? filterLabels,
         IReadOnlyList<string>? invalidFilters)
     {
-        w.Write("<script>window.__NETGRID__=window.__NETGRID__||{};");
-        w.Write("__NETGRID__.initial=__NETGRID__.initial||{};");
-        w.Write("__NETGRID__.columns=__NETGRID__.columns||{};");
-
-        w.Write("__NETGRID__.initial[");
+        w.Write("<script type=\"application/json\" data-netgrid-state=\"");
+        w.Write(Encoder.Encode(_options.Id));
+        w.Write("\">{\"id\":");
         AppendJsonString(w, _options.Id);
-        w.Write("]={\"total\":");
+
+        w.Write(",\"initial\":{\"total\":");
         w.Write(page.TotalCount.ToString(CultureInfo.InvariantCulture));
         w.Write(",\"page\":");
         w.Write(page.Page.ToString(CultureInfo.InvariantCulture));
@@ -1731,10 +1755,10 @@ public sealed class GridHtmlRenderer<TItem>
             w.Write(JsonSerializer.Serialize(invalidFilters));
         }
 
-        w.Write("};");
+        w.Write('}');
 
         // Hidden columns the user can still filter by (a host filter bar, an id in a link) need a
-        // name for their filter chip. They get a map of their own, apart from __NETGRID__.columns:
+        // name for their filter chip. They get a map of their own, apart from the columns list:
         // that list drives pinning, the group panel, header drops and the column chooser, and a
         // hidden column must never show up there.
         var named = false;
@@ -1745,17 +1769,7 @@ public sealed class GridHtmlRenderer<TItem>
                 continue;
             }
 
-            if (!named)
-            {
-                w.Write("__NETGRID__.filterHeaders=__NETGRID__.filterHeaders||{};__NETGRID__.filterHeaders[");
-                AppendJsonString(w, _options.Id);
-                w.Write("]={");
-            }
-            else
-            {
-                w.Write(',');
-            }
-
+            w.Write(named ? "," : ",\"filterHeaders\":{");
             named = true;
             AppendJsonString(w, column.Field);
             w.Write(':');
@@ -1764,20 +1778,15 @@ public sealed class GridHtmlRenderer<TItem>
 
         if (named)
         {
-            w.Write("};");
+            w.Write('}');
         }
 
-        w.Write("__NETGRID__.virtual=__NETGRID__.virtual||{};__NETGRID__.virtual[");
-        AppendJsonString(w, _options.Id);
-        w.Write("]=");
+        w.Write(",\"virtual\":");
         w.Write(_options.VirtualScroll is { } virtualConfig
             ? "{\"blockSize\":" + virtualConfig.BlockSize.ToString(CultureInfo.InvariantCulture) + "}"
             : "null");
-        w.Write(';');
 
-        w.Write("__NETGRID__.views=__NETGRID__.views||{};__NETGRID__.views[");
-        AppendJsonString(w, _options.Id);
-        w.Write("]=[");
+        w.Write(",\"views\":[");
         for (var i = 0; i < _options.Views.Count; i++)
         {
             if (i > 0)
@@ -1792,12 +1801,7 @@ public sealed class GridHtmlRenderer<TItem>
             w.Write('}');
         }
 
-        w.Write("];");
-
-        w.Write("__NETGRID__.columns[");
-        AppendJsonString(w, _options.Id);
-        w.Write("]=[");
-
+        w.Write("],\"columns\":[");
         for (var i = 0; i < _visibleColumns.Count; i++)
         {
             if (i > 0)
@@ -1815,21 +1819,17 @@ public sealed class GridHtmlRenderer<TItem>
             w.Write(_visibleColumns[i].IsFilterable && IsListMode(_visibleColumns[i]) ? "list" : "op");
             w.Write("\",\"pin\":");
             w.Write(_visibleColumns[i].IsPinned ? "\"left\"" : _visibleColumns[i].IsPinnedRight ? "\"right\"" : "false");
-            w.Write("}");
+            w.Write('}');
         }
 
-        w.Write("];");
-        w.Write("__NETGRID__.locale=");
+        w.Write("],\"locale\":");
         w.Write(JsonSerializer.Serialize(_locale.CurrentStrings, JsonOptions));
-        w.Write(';');
 
-        // Published so the client (netopengrid.js) builds its fetch/navigation URLs from the
-        // server's actual data-endpoint prefix instead of a hardcoded "/netgrid" literal.
-        w.Write("Object.assign(__NETGRID__,{\"prefix\":");
+        // The client (netopengrid.js) builds its fetch/navigation URLs from the server's actual
+        // data-endpoint prefix instead of a hardcoded "/netgrid" literal.
+        w.Write(",\"prefix\":");
         AppendJsonString(w, _assetOptions.RoutePrefix);
-        w.Write("});");
-
-        w.Write("</script>");
+        w.Write("}</script>");
     }
 
     private bool IsFirstFilterable(GridColumn<TItem> column)

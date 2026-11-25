@@ -26,14 +26,14 @@ public class RightPinTests
         Assert.Equal(["code", "name", "city", "units"], headerFields);
 
         var unitsHeader = Regex.Match(html, "<th[^>]*data-field=\"units\"[^>]*>").Value;
-        Assert.Contains("data-pin-right=\"units\" style=\"right:0\"", unitsHeader);
+        Assert.Contains("data-pin-right=\"units\" class=\"right-0 ", unitsHeader);
         Assert.Contains("sticky z-30 relative border-l", unitsHeader);
 
         var body = html[html.IndexOf("<tbody", StringComparison.Ordinal)..];
         var rowFields = Regex.Matches(Regex.Match(body, "<tr.*?</tr>", RegexOptions.Singleline).Value, "<td data-field=\"([^\"]+)\"")
             .Select(m => m.Groups[1].Value).ToArray();
         Assert.Equal(headerFields, rowFields);
-        Assert.Contains("<td data-field=\"units\" data-pin-right=\"units\" style=\"right:0\" class=\"sticky z-10 border-l", body);
+        Assert.Contains("<td data-field=\"units\" data-pin-right=\"units\" class=\"right-0 sticky z-10 border-l", body);
 
         Assert.Contains("{\"field\":\"units\",\"header\":\"Units\",", html);
         Assert.Contains("\"pin\":\"right\"", html);
@@ -46,8 +46,8 @@ public class RightPinTests
         using var host = await BuildHostAsync();
         var html = await host.GetTestClient().GetStringAsync("/netgrid/items");
 
-        Assert.Contains("<th scope=\"col\" data-actions data-pin-right=\"__actions\" style=\"right:0\" class=\"sticky z-30", html);
-        Assert.Contains("<td data-actions data-pin-right=\"__actions\" style=\"right:0\" class=\"sticky z-10", html);
+        Assert.Contains("<th scope=\"col\" data-actions data-pin-right=\"__actions\" class=\"right-0 sticky z-30", html);
+        Assert.Contains("<td data-actions data-pin-right=\"__actions\" class=\"right-0 sticky z-10", html);
     }
 
     [Fact]

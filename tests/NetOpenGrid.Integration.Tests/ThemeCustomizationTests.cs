@@ -54,7 +54,7 @@ public class ThemeCustomizationTests
     {
         var head = Head(await ShellAsync(Options(), new NetOpenGridAssetOptions()));
 
-        Assert.DoesNotContain("--ng-brand", head);
+        Assert.DoesNotContain("netgrid-brand", head);
         Assert.Single(Regex.Matches(head, "<link rel=\"stylesheet\""));
     }
 
@@ -69,7 +69,7 @@ public class ThemeCustomizationTests
         var head = Head(await ShellAsync(options, assets, embedded));
 
         var theme = IndexOf(head, "href=\"/_netgrid/css/netopengrid-grid.css");
-        var brand = IndexOf(head, "<style>:root{--ng-brand:#0d9488}</style>");
+        var brand = IndexOf(head, "<meta name=\"netgrid-brand\" content=\"#0d9488\">");
         var global = IndexOf(head, "<link rel=\"stylesheet\" href=\"/css/site.css\">");
         var grid = IndexOf(head, "<link rel=\"stylesheet\" href=\"/css/grid-overrides.css\">");
         Assert.True(theme < brand && brand < global && global < grid, "expected theme < brand < global < grid");
@@ -83,7 +83,7 @@ public class ThemeCustomizationTests
 
         var head = Head(await ShellAsync(options, assets));
 
-        Assert.Contains("<style>:root{--ng-brand:oklch(0.600 0.118 185)}</style>", head);
+        Assert.Contains("<meta name=\"netgrid-brand\" content=\"oklch(0.600 0.118 185)\">", head);
         Assert.DoesNotContain("#4f46e5", head);
     }
 
@@ -109,7 +109,7 @@ public class ThemeCustomizationTests
 
         var head = Head(await ShellAsync(options, new NetOpenGridAssetOptions()));
 
-        Assert.DoesNotContain("--ng-brand", head);
+        Assert.DoesNotContain("netgrid-brand", head);
         Assert.DoesNotContain("alert(1)", head);
         Assert.Contains("<link rel=\"stylesheet\" href=\"/css/ok.css\">", head);
     }
@@ -139,7 +139,7 @@ public class ThemeCustomizationTests
         var head = GridAssetTags.Head(assets, "grid");
 
         var theme = IndexOf(head, "netopengrid-grid.css");
-        var brand = IndexOf(head, "<style>:root{--ng-brand:#0d9488}</style>");
+        var brand = IndexOf(head, "<meta name=\"netgrid-brand\" content=\"#0d9488\">");
         var link = IndexOf(head, "<link rel=\"stylesheet\" href=\"/css/grid-overrides.css\">");
         Assert.True(theme < brand && brand < link);
     }
